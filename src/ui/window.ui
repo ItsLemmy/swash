@@ -266,28 +266,6 @@
                         </style>
 
                         <child>
-                          <object class="GtkToggleButton" id="pan_tool_button">
-                            <property name="group">brush_tool_button</property>
-                            <property name="tooltip-text">Pan</property>
-                            <property name="icon-name">waytator-pan-symbolic</property>
-                            <style>
-                              <class name="flat"/>
-                            </style>
-                          </object>
-                        </child>
-
-                        <child>
-                          <object class="GtkToggleButton" id="crop_tool_button">
-                            <property name="group">brush_tool_button</property>
-                            <property name="tooltip-text">Crop</property>
-                            <property name="icon-name">waytator-crop-symbolic</property>
-                            <style>
-                              <class name="flat"/>
-                            </style>
-                          </object>
-                        </child>
-
-                        <child>
                           <object class="GtkToggleButton" id="brush_tool_button">
                             <property name="tooltip-text">Brush</property>
                             <property name="active">True</property>
@@ -299,21 +277,10 @@
                         </child>
 
                         <child>
-                          <object class="GtkToggleButton" id="highlighter_tool_button">
+                          <object class="GtkToggleButton" id="arrow_tool_button">
                             <property name="group">brush_tool_button</property>
-                            <property name="tooltip-text">Highlighter</property>
-                            <property name="icon-name">waytator-highlight-symbolic</property>
-                            <style>
-                              <class name="flat"/>
-                            </style>
-                          </object>
-                        </child>
-
-                        <child>
-                          <object class="GtkToggleButton" id="eraser_tool_button">
-                            <property name="group">brush_tool_button</property>
-                            <property name="tooltip-text">Eraser</property>
-                            <property name="icon-name">waytator-eraser-symbolic</property>
+                            <property name="tooltip-text">Arrow</property>
+                            <property name="icon-name">waytator-arrow-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -398,33 +365,12 @@
                                           </object>
                                         </property>
                                         <layout>
-                                          <property name="column">0</property>
-                                          <property name="row">1</property>
+                                          <property name="column">2</property>
+                                          <property name="row">0</property>
                                         </layout>
                                       </object>
                                     </child>
 
-                                    <child>
-                                      <object class="GtkToggleButton" id="arrow_tool_button">
-                                        <property name="group">brush_tool_button</property>
-                                        <property name="tooltip-text">Arrow</property>
-                                        <property name="width-request">40</property>
-                                        <property name="height-request">40</property>
-                                        <style>
-                                          <class name="shape-choice"/>
-                                          <class name="flat"/>
-                                        </style>
-                                        <property name="child">
-                                          <object class="GtkImage">
-                                            <property name="icon-name">waytator-arrow-symbolic</property>
-                                          </object>
-                                        </property>
-                                        <layout>
-                                          <property name="column">1</property>
-                                          <property name="row">1</property>
-                                        </layout>
-                                      </object>
-                                    </child>
                                   </object>
                                 </child>
                               </object>
@@ -433,10 +379,10 @@
                         </child>
 
                         <child>
-                          <object class="GtkToggleButton" id="ocr_tool_button">
+                          <object class="GtkToggleButton" id="highlighter_tool_button">
                             <property name="group">brush_tool_button</property>
-                            <property name="tooltip-text">Recognize text</property>
-                            <property name="icon-name">waytator-scanner-symbolic</property>
+                            <property name="tooltip-text">Highlighter</property>
+                            <property name="icon-name">waytator-highlight-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -459,6 +405,50 @@
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Blur</property>
                             <property name="icon-name">waytator-blur-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkToggleButton" id="eraser_tool_button">
+                            <property name="group">brush_tool_button</property>
+                            <property name="tooltip-text">Eraser</property>
+                            <property name="icon-name">waytator-eraser-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkToggleButton" id="crop_tool_button">
+                            <property name="group">brush_tool_button</property>
+                            <property name="tooltip-text">Crop</property>
+                            <property name="icon-name">waytator-crop-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkToggleButton" id="pan_tool_button">
+                            <property name="group">brush_tool_button</property>
+                            <property name="tooltip-text">Pan</property>
+                            <property name="icon-name">waytator-pan-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkToggleButton" id="ocr_tool_button">
+                            <property name="group">brush_tool_button</property>
+                            <property name="tooltip-text">Recognize text</property>
+                            <property name="icon-name">waytator-scanner-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>

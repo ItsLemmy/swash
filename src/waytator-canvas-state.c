@@ -268,8 +268,7 @@ waytator_window_update_tool_ui(WaytatorWindow *self)
                                || self->active_tool == WAYTATOR_TOOL_CIRCLE;
   const gboolean is_shape_menu = self->active_tool == WAYTATOR_TOOL_RECTANGLE
                               || self->active_tool == WAYTATOR_TOOL_CIRCLE
-                              || self->active_tool == WAYTATOR_TOOL_LINE
-                              || self->active_tool == WAYTATOR_TOOL_ARROW;
+                              || self->active_tool == WAYTATOR_TOOL_LINE;
 
   if (is_shape_menu) {
     gtk_menu_button_set_icon_name(self->shapes_tool_button,
