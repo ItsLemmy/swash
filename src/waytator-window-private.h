@@ -128,6 +128,10 @@ struct _WaytatorWindow {
   WaytatorStroke *selected_stroke;
   double move_start_x;
   double move_start_y;
+  gboolean text_editing;
+  GtkWidget *text_input_hidden;
+  guint text_cursor_blink_id;
+  gboolean text_cursor_visible;
   GdkEventSequence *active_touch_draw_sequence;
   GdkEventSequence *cancelled_touch_draw_sequence;
   GHashTable *active_touch_sequences;
@@ -205,6 +209,7 @@ void waytator_window_set_zoom_at(WaytatorWindow *self,
                                  double          viewport_y);
 void waytator_window_update_size_controls(WaytatorWindow *self);
 void waytator_window_update_tool_ui(WaytatorWindow *self);
+void waytator_window_text_editing_commit(WaytatorWindow *self);
 void waytator_window_queue_fit_zoom(WaytatorWindow *self);
 void waytator_window_sync_state(WaytatorWindow *self);
 void waytator_window_install_history_actions(GtkWidgetClass *widget_class);

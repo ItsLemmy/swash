@@ -14,6 +14,9 @@ typedef struct {
   double y;
 } WaytatorTouchTapPoint;
 
+static void waytator_window_text_editing_cancel(WaytatorWindow *self);
+void waytator_window_text_editing_commit(WaytatorWindow *self);
+
 static void
 waytator_window_get_viewport_size(WaytatorWindow *self,
                                   double         *width,
@@ -56,6 +59,11 @@ static gboolean
 waytator_window_cancel_current_interaction(WaytatorWindow *self)
 {
   GPtrArray *strokes;
+
+  if (self->text_editing) {
+    waytator_window_text_editing_cancel(self);
+    return TRUE;
+  }
 
   if (!self->drawing)
     return FALSE;
@@ -846,11 +854,26 @@ waytator_window_crop_end(GtkGestureDrag *gesture,
 }
 
 static void
-waytator_window_text_popover_closed(GtkPopover     *popover,
-                                    WaytatorWindow *self)
+waytator_window_text_editing_stop(WaytatorWindow *self)
 {
+  self->text_editing = FALSE;
+  self->text_cursor_visible = FALSE;
+  if (self->text_cursor_blink_id != 0) {
+    g_source_remove(self->text_cursor_blink_id);
+    self->text_cursor_blink_id = 0;
+  }
+  if (self->text_input_hidden != NULL)
+    gtk_widget_set_visible(self->text_input_hidden, FALSE);
+  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+}
+
+void
+waytator_window_text_editing_commit(WaytatorWindow *self)
+{
+  if (!self->text_editing)
+    return;
+
   if (self->current_stroke != NULL
-      && self->current_stroke->tool == WAYTATOR_TOOL_TEXT
       && (self->current_stroke->text == NULL || *self->current_stroke->text == '\0')) {
     GPtrArray *strokes = waytator_window_strokes(self);
 
@@ -861,28 +884,107 @@ waytator_window_text_popover_closed(GtkPopover     *popover,
     waytator_document_discard_undo_step(self->document);
     waytator_window_refresh_document_state(self);
     waytator_window_update_history_buttons(self);
-    gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
-  }
-
-  gtk_widget_unparent(GTK_WIDGET(popover));
-}
-
-static void
-waytator_window_text_entry_activated(GtkEntry       *entry,
-                                     WaytatorWindow *self)
-{
-  const char *text = gtk_editable_get_text(GTK_EDITABLE(entry));
-  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(entry), GTK_TYPE_POPOVER);
-
-  if (text != NULL && *text != '\0' && self->current_stroke != NULL) {
-    g_free(self->current_stroke->text);
-    self->current_stroke->text = g_strdup(text);
-    gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+  } else {
     waytator_window_maybe_auto_copy_latest_change(self);
     self->current_stroke = NULL;
   }
 
-  gtk_popover_popdown(GTK_POPOVER(popover));
+  waytator_window_text_editing_stop(self);
+}
+
+static void
+waytator_window_text_editing_cancel(WaytatorWindow *self)
+{
+  GPtrArray *strokes;
+
+  if (!self->text_editing)
+    return;
+
+  strokes = waytator_window_strokes(self);
+  if (self->current_stroke != NULL && strokes != NULL)
+    g_ptr_array_remove(strokes, self->current_stroke);
+
+  self->current_stroke = NULL;
+  waytator_document_discard_undo_step(self->document);
+  waytator_window_refresh_document_state(self);
+  waytator_window_update_history_buttons(self);
+  waytator_window_text_editing_stop(self);
+}
+
+static gboolean
+waytator_window_text_cursor_blink(gpointer user_data)
+{
+  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+
+  if (!self->text_editing) {
+    self->text_cursor_blink_id = 0;
+    return G_SOURCE_REMOVE;
+  }
+
+  self->text_cursor_visible = !self->text_cursor_visible;
+  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+  return G_SOURCE_CONTINUE;
+}
+
+static void
+waytator_window_text_input_changed(GtkEditable *editable,
+                                   gpointer     user_data)
+{
+  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  const char *text;
+
+  if (!self->text_editing || self->current_stroke == NULL)
+    return;
+
+  text = gtk_editable_get_text(editable);
+  g_free(self->current_stroke->text);
+  self->current_stroke->text = (text != NULL && *text != '\0') ? g_strdup(text) : NULL;
+  self->text_cursor_visible = TRUE;
+  if (self->text_cursor_blink_id != 0)
+    g_source_remove(self->text_cursor_blink_id);
+  self->text_cursor_blink_id = g_timeout_add(530, waytator_window_text_cursor_blink, self);
+  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+}
+
+static void
+waytator_window_text_input_focus_lost(GtkEventControllerFocus *controller,
+                                      gpointer                 user_data)
+{
+  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+
+  (void) controller;
+
+  if (self->text_editing)
+    waytator_window_text_editing_commit(self);
+}
+
+static gboolean
+waytator_window_text_input_key_pressed(GtkEventControllerKey *controller,
+                                       guint                  keyval,
+                                       guint                  keycode,
+                                       GdkModifierType        state,
+                                       gpointer               user_data)
+{
+  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+
+  (void) controller;
+  (void) keycode;
+  (void) state;
+
+  if (!self->text_editing)
+    return FALSE;
+
+  if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) {
+    waytator_window_text_editing_commit(self);
+    return TRUE;
+  }
+
+  if (keyval == GDK_KEY_Escape) {
+    waytator_window_text_editing_cancel(self);
+    return TRUE;
+  }
+
+  return FALSE;
 }
 
 static void
@@ -893,6 +995,11 @@ waytator_window_draw_begin(GtkGestureDrag *gesture,
 {
   WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
   const gboolean is_touch = waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture));
+
+  if (self->text_editing) {
+    waytator_window_text_editing_commit(self);
+    return;
+  }
 
   if (self->texture == NULL)
     return;
@@ -1076,7 +1183,9 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
     }
     if (self->interaction_has_undo_step)
       waytator_window_maybe_auto_copy_latest_change(self);
+    self->selected_stroke = NULL;
     self->interaction_has_undo_step = FALSE;
+    gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
     goto done;
   }
 
@@ -1114,44 +1223,14 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
     waytator_stroke_add_point(self->current_stroke, image_x, image_y);
 
   if (self->active_tool == WAYTATOR_TOOL_TEXT) {
-    GtkWidget *popover = gtk_popover_new();
-    GtkWidget *entry = gtk_entry_new();
-    GdkRectangle rect;
-    const int img_w = gdk_paintable_get_intrinsic_width(GDK_PAINTABLE(self->texture));
-    const int img_h = gdk_paintable_get_intrinsic_height(GDK_PAINTABLE(self->texture));
-    double disp_x;
-    double disp_y;
-    double disp_w;
-    double disp_h;
-    const WaytatorPoint *p = &g_array_index(self->current_stroke->points, WaytatorPoint, 0);
-
-    gtk_popover_set_child(GTK_POPOVER(popover), entry);
-    gtk_widget_set_parent(popover, self->canvas_surface);
-
-    waytator_window_get_display_rect(self,
-                                     gtk_widget_get_width(GTK_WIDGET(self->drawing_area)),
-                                     gtk_widget_get_height(GTK_WIDGET(self->drawing_area)),
-                                     &disp_x,
-                                     &disp_y,
-                                     &disp_w,
-                                     &disp_h);
-
-    rect.x = (int) lround(disp_x + p->x * (disp_w / img_w));
-    rect.y = (int) lround(disp_y + p->y * (disp_h / img_h));
-    rect.width = 1;
-    rect.height = 1;
-
-    gtk_popover_set_has_arrow(GTK_POPOVER(popover), FALSE);
-    gtk_popover_set_position(GTK_POPOVER(popover),
-                             rect.y < gtk_widget_get_height(GTK_WIDGET(self->drawing_area)) / 2
-                               ? GTK_POS_BOTTOM
-                               : GTK_POS_TOP);
-    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
-    g_signal_connect(entry, "activate", G_CALLBACK(waytator_window_text_entry_activated), self);
-    g_signal_connect(popover, "closed", G_CALLBACK(waytator_window_text_popover_closed), self);
-
-    gtk_popover_popup(GTK_POPOVER(popover));
-    gtk_widget_grab_focus(entry);
+    self->text_editing = TRUE;
+    self->text_cursor_visible = TRUE;
+    g_free(self->current_stroke->text);
+    self->current_stroke->text = NULL;
+    gtk_editable_set_text(GTK_EDITABLE(self->text_input_hidden), "");
+    gtk_widget_set_visible(self->text_input_hidden, TRUE);
+    gtk_widget_grab_focus(self->text_input_hidden);
+    self->text_cursor_blink_id = g_timeout_add(530, waytator_window_text_cursor_blink, self);
   }
 
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
@@ -1415,4 +1494,24 @@ waytator_window_setup_controllers(WaytatorWindow *self)
   keys = gtk_event_controller_key_new();
   g_signal_connect(keys, "key-pressed", G_CALLBACK(waytator_window_global_key_pressed), self);
   gtk_widget_add_controller(GTK_WIDGET(self), keys);
+
+  {
+    GtkWidget *text_input = gtk_text_new();
+    GtkEventController *text_keys = gtk_event_controller_key_new();
+
+    GtkEventController *text_focus = gtk_event_controller_focus_new();
+
+    gtk_widget_set_size_request(text_input, 1, 1);
+    gtk_widget_set_opacity(text_input, 0.0);
+    gtk_widget_set_visible(text_input, FALSE);
+    gtk_widget_set_can_focus(text_input, TRUE);
+    gtk_overlay_add_overlay(GTK_OVERLAY(self->canvas_surface), text_input);
+    g_signal_connect(text_input, "changed", G_CALLBACK(waytator_window_text_input_changed), self);
+    gtk_event_controller_set_propagation_phase(text_keys, GTK_PHASE_CAPTURE);
+    g_signal_connect(text_keys, "key-pressed", G_CALLBACK(waytator_window_text_input_key_pressed), self);
+    gtk_widget_add_controller(text_input, text_keys);
+    g_signal_connect(text_focus, "leave", G_CALLBACK(waytator_window_text_input_focus_lost), self);
+    gtk_widget_add_controller(text_input, text_focus);
+    self->text_input_hidden = text_input;
+  }
 }

@@ -43,6 +43,10 @@ waytator_window_undo_clicked(GtkButton *button,
 
   (void) button;
 
+  if (self->text_editing)
+    waytator_window_text_editing_commit(self);
+  self->selected_stroke = NULL;
+
   if (!waytator_document_can_undo(self->document))
     return;
 
@@ -58,6 +62,10 @@ waytator_window_redo_clicked(GtkButton *button,
   GPtrArray *snapshot;
 
   (void) button;
+
+  if (self->text_editing)
+    waytator_window_text_editing_commit(self);
+  self->selected_stroke = NULL;
 
   if (!waytator_document_can_redo(self->document))
     return;
@@ -96,6 +104,9 @@ waytator_window_tool_toggled(GtkToggleButton *button,
 
   if (!gtk_toggle_button_get_active(button))
     return;
+
+  if (self->text_editing)
+    waytator_window_text_editing_commit(self);
 
   if (button == self->pan_tool_button)
     self->active_tool = WAYTATOR_TOOL_PAN;

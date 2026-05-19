@@ -150,6 +150,34 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
     cairo_set_dash(cr, NULL, 0, 0.0);
   }
 
+  if (self->text_editing && self->text_cursor_visible && self->current_stroke != NULL
+      && self->current_stroke->points->len >= 1) {
+    const WaytatorPoint *p = &g_array_index(self->current_stroke->points, WaytatorPoint, 0);
+    cairo_text_extents_t extents = {0};
+    cairo_font_extents_t font_ext;
+    double cursor_x;
+    const double scale = display_width / image_width;
+
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, self->current_stroke->width);
+
+    if (self->current_stroke->text != NULL && *self->current_stroke->text != '\0')
+      cairo_text_extents(cr, self->current_stroke->text, &extents);
+
+    cairo_font_extents(cr, &font_ext);
+    cursor_x = p->x + extents.x_advance;
+
+    cairo_set_line_width(cr, 2.0 / scale);
+    cairo_set_source_rgba(cr,
+                          self->current_stroke->r,
+                          self->current_stroke->g,
+                          self->current_stroke->b,
+                          self->current_stroke->a);
+    cairo_move_to(cr, cursor_x, p->y - font_ext.ascent);
+    cairo_line_to(cr, cursor_x, p->y + font_ext.descent);
+    cairo_stroke(cr);
+  }
+
   cairo_restore(cr);
 
   if (self->active_tool == WAYTATOR_TOOL_CROP && self->drawing) {
@@ -182,6 +210,7 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
 
   if (self->pointer_in
       && (!self->drawing || self->active_tool == WAYTATOR_TOOL_ERASER)
+      && !self->text_editing
       && !waytator_tool_is_non_drawing(self->active_tool)) {
     cairo_save(cr);
     cairo_rectangle(cr, display_x, display_y, display_width, display_height);

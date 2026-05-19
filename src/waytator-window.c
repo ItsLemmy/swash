@@ -2473,6 +2473,11 @@ waytator_window_dispose(GObject *object)
 
   waytator_window_save_preferences(self);
 
+  if (self->text_cursor_blink_id != 0) {
+    g_source_remove(self->text_cursor_blink_id);
+    self->text_cursor_blink_id = 0;
+  }
+
   g_clear_object(&self->current_file);
   g_clear_pointer(&self->source_name, g_free);
   g_clear_object(&self->texture);

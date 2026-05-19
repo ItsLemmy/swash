@@ -700,6 +700,27 @@ waytator_stroke_get_bounds(WaytatorStroke *stroke,
     return;
   }
 
+  if (stroke->tool == WAYTATOR_TOOL_TEXT && stroke->text != NULL && *stroke->text != '\0') {
+    const WaytatorPoint *p = &g_array_index(stroke->points, WaytatorPoint, 0);
+    cairo_surface_t *tmp = cairo_image_surface_create(CAIRO_FORMAT_A1, 1, 1);
+    cairo_t *cr = cairo_create(tmp);
+    cairo_text_extents_t extents;
+    cairo_font_extents_t font_ext;
+
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, stroke->width);
+    cairo_text_extents(cr, stroke->text, &extents);
+    cairo_font_extents(cr, &font_ext);
+    cairo_destroy(cr);
+    cairo_surface_destroy(tmp);
+
+    *out_x = p->x + extents.x_bearing;
+    *out_y = p->y - font_ext.ascent;
+    *out_w = extents.x_advance - extents.x_bearing;
+    *out_h = font_ext.ascent + font_ext.descent;
+    return;
+  }
+
   for (guint i = 0; i < stroke->points->len; i++) {
     const WaytatorPoint *p = &g_array_index(stroke->points, WaytatorPoint, i);
 
