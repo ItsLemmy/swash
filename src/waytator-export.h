@@ -11,6 +11,7 @@ WaytatorExportRequest *waytator_export_request_new(GdkTexture            *textur
                                                    GDestroyNotify         stroke_free,
                                                    gboolean               allow_marker_overlap,
                                                    WaytatorStrokeRenderFunc render_stroke,
+                                                   guint                  image_generation,
                                                    GError               **error);
 void waytator_export_request_free(WaytatorExportRequest *request);
 

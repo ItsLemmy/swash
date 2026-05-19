@@ -32,7 +32,8 @@ waytator_tool_has_size_control(WaytatorTool tool)
 {
   return tool != WAYTATOR_TOOL_PAN
       && tool != WAYTATOR_TOOL_CROP
-      && tool != WAYTATOR_TOOL_OCR;
+      && tool != WAYTATOR_TOOL_OCR
+      && tool != WAYTATOR_TOOL_MOVE;
 }
 
 void
@@ -143,6 +144,8 @@ waytator_window_tool_toggled(GtkToggleButton *button,
     self->active_tool = WAYTATOR_TOOL_TEXT;
   else if (button == self->blur_tool_button)
     self->active_tool = WAYTATOR_TOOL_BLUR;
+  else if (button == self->move_tool_button)
+    self->active_tool = WAYTATOR_TOOL_MOVE;
   else
     self->active_tool = WAYTATOR_TOOL_BRUSH;
 
@@ -264,6 +267,7 @@ waytator_window_update_tool_ui(WaytatorWindow *self)
   const gboolean is_pan_tool = self->active_tool == WAYTATOR_TOOL_PAN;
   const gboolean is_crop_tool = self->active_tool == WAYTATOR_TOOL_CROP;
   const gboolean is_ocr_tool = self->active_tool == WAYTATOR_TOOL_OCR;
+  const gboolean is_move_tool = self->active_tool == WAYTATOR_TOOL_MOVE;
   const gboolean has_fill_color = self->active_tool == WAYTATOR_TOOL_RECTANGLE
                                || self->active_tool == WAYTATOR_TOOL_CIRCLE;
   const gboolean is_shape_menu = self->active_tool == WAYTATOR_TOOL_RECTANGLE
@@ -279,7 +283,7 @@ waytator_window_update_tool_ui(WaytatorWindow *self)
   }
 
   gtk_widget_set_visible(self->settings_group,
-                         self->texture != NULL && !is_pan_tool && !is_crop_tool && !is_ocr_tool);
+                         self->texture != NULL && !is_pan_tool && !is_crop_tool && !is_ocr_tool && !is_move_tool);
   gtk_widget_set_visible(GTK_WIDGET(self->color_button),
                           !is_pan_tool &&
                           !is_crop_tool &&
@@ -331,6 +335,7 @@ waytator_window_setup_tool_signals(WaytatorWindow *self)
   waytator_window_connect_tool_toggle(self, self->ocr_tool_button);
   waytator_window_connect_tool_toggle(self, self->text_tool_button);
   waytator_window_connect_tool_toggle(self, self->blur_tool_button);
+  waytator_window_connect_tool_toggle(self, self->move_tool_button);
 
   g_signal_connect(self->undo_button, "clicked", G_CALLBACK(waytator_window_undo_clicked), self);
   g_signal_connect(self->redo_button, "clicked", G_CALLBACK(waytator_window_redo_clicked), self);

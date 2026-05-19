@@ -21,10 +21,23 @@ void waytator_stroke_set_last_point(WaytatorStroke *stroke,
                                     double          y);
 void waytator_stroke_render(cairo_t         *cr,
                             WaytatorStroke  *stroke,
-                            cairo_surface_t *source_surface);
+                            cairo_surface_t *source_surface,
+                            guint            image_generation);
 gboolean waytator_stroke_intersects_segment(WaytatorStroke *stroke,
                                             double          x0,
                                             double          y0,
                                             double          x1,
                                             double          y1,
                                             double          radius);
+gboolean waytator_stroke_hit_test(WaytatorStroke *stroke,
+                                  double          x,
+                                  double          y,
+                                  double          tolerance);
+void waytator_stroke_offset(WaytatorStroke *stroke,
+                            double          dx,
+                            double          dy);
+void waytator_stroke_get_bounds(WaytatorStroke *stroke,
+                                double         *x,
+                                double         *y,
+                                double         *w,
+                                double         *h);

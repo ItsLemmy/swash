@@ -32,3 +32,4 @@ void waytator_document_clear_history(WaytatorDocument *document);
 void waytator_document_set_strokes(WaytatorDocument *document,
                                    GPtrArray        *strokes);
 void waytator_document_clear_annotations(WaytatorDocument *document);
+guint waytator_document_get_image_generation(WaytatorDocument *document);

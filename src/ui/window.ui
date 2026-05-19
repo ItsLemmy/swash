@@ -423,6 +423,17 @@
                         </child>
 
                         <child>
+                          <object class="GtkToggleButton" id="move_tool_button">
+                            <property name="group">brush_tool_button</property>
+                            <property name="tooltip-text">Move</property>
+                            <property name="icon-name">waytator-move-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+
+                        <child>
                           <object class="GtkToggleButton" id="crop_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Crop</property>

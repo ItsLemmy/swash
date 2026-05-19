@@ -5,7 +5,8 @@ waytator_render_strokes(cairo_t                *cr,
                         GPtrArray              *strokes,
                         cairo_surface_t        *source_surface,
                         gboolean                allow_marker_overlap,
-                        WaytatorStrokeRenderFunc render_stroke)
+                        WaytatorStrokeRenderFunc render_stroke,
+                        guint                   image_generation)
 {
   cairo_surface_t *marker_surface = NULL;
   cairo_t *marker_cr = NULL;
@@ -29,9 +30,9 @@ waytator_render_strokes(cairo_t                *cr,
     WaytatorStroke *stroke = g_ptr_array_index(strokes, i);
 
     if (!allow_marker_overlap && stroke->tool == WAYTATOR_TOOL_MARKER)
-      render_stroke(marker_cr, stroke, source_surface);
+      render_stroke(marker_cr, stroke, source_surface, image_generation);
     else
-      render_stroke(cr, stroke, source_surface);
+      render_stroke(cr, stroke, source_surface, image_generation);
   }
 
   if (marker_cr != NULL) {

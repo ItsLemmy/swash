@@ -97,6 +97,7 @@ waytator_export_request_new(GdkTexture              *texture,
                              GDestroyNotify           stroke_free,
                              gboolean                 allow_marker_overlap,
                              WaytatorStrokeRenderFunc render_stroke,
+                             guint                    image_generation,
                              GError                 **error)
 {
   WaytatorExportRequest *request;
@@ -121,6 +122,7 @@ waytator_export_request_new(GdkTexture              *texture,
   request->strokes = g_ptr_array_new_with_free_func(stroke_free);
   request->allow_marker_overlap = allow_marker_overlap;
   request->render_stroke = render_stroke;
+  request->image_generation = image_generation;
 
   gdk_texture_download(texture, request->pixels, request->stride);
 
@@ -185,7 +187,8 @@ waytator_export_run_task(GTask        *task,
                           request->strokes,
                           surface,
                           request->allow_marker_overlap,
-                          request->render_stroke);
+                          request->render_stroke,
+                          request->image_generation);
   cairo_destroy(cr);
   cairo_surface_flush(surface);
 

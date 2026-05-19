@@ -131,7 +131,24 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
                           strokes,
                           self->image_surface,
                           self->allow_highlighter_overlap,
-                          waytator_stroke_render);
+                          waytator_stroke_render,
+                          waytator_document_get_image_generation(self->document));
+
+  if (self->active_tool == WAYTATOR_TOOL_MOVE && self->selected_stroke != NULL) {
+    double bx, by, bw, bh;
+    const double dash[] = { 6.0 / (display_width / image_width), 4.0 / (display_width / image_width) };
+
+    waytator_stroke_get_bounds(self->selected_stroke, &bx, &by, &bw, &bh);
+    cairo_set_dash(cr, dash, G_N_ELEMENTS(dash), 0.0);
+    cairo_set_line_width(cr, 1.5 / (display_width / image_width));
+    cairo_rectangle(cr, bx - 2.0, by - 2.0, bw + 4.0, bh + 4.0);
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.8);
+    cairo_stroke_preserve(cr);
+    cairo_set_dash(cr, dash, G_N_ELEMENTS(dash), dash[0]);
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.8);
+    cairo_stroke(cr);
+    cairo_set_dash(cr, NULL, 0, 0.0);
+  }
 
   cairo_restore(cr);
 

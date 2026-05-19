@@ -54,6 +54,7 @@ struct _WaytatorWindow {
   GtkToggleButton *ocr_tool_button;
   GtkToggleButton *text_tool_button;
   GtkToggleButton *blur_tool_button;
+  GtkToggleButton *move_tool_button;
   GtkButton *rotate_counter_clockwise_button;
   GtkButton *flip_horizontal_button;
   GtkButton *flip_vertical_button;
@@ -126,9 +127,9 @@ struct _WaytatorWindow {
   WaytatorWindowBackgroundMode window_background_mode;
   gboolean updating_ui;
   gboolean interaction_has_undo_step;
-  gboolean blur_commit_warning_accepted;
-  gboolean blur_commit_warning_showing;
-  gboolean skip_blur_warning;
+  WaytatorStroke *selected_stroke;
+  double move_start_x;
+  double move_start_y;
   GdkEventSequence *active_touch_draw_sequence;
   GdkEventSequence *cancelled_touch_draw_sequence;
   GHashTable *active_touch_sequences;
@@ -148,9 +149,9 @@ struct _WaytatorWindow {
   GdkRGBA default_primary_color;
   GdkRGBA default_highlighter_color;
   GdkRGBA default_fill_color;
-  double tool_widths[WAYTATOR_TOOL_BLUR + 1];
-  GdkRGBA tool_colors[WAYTATOR_TOOL_BLUR + 1];
-  GdkRGBA tool_fill_colors[WAYTATOR_TOOL_BLUR + 1];
+  double tool_widths[WAYTATOR_TOOL_MOVE + 1];
+  GdkRGBA tool_colors[WAYTATOR_TOOL_MOVE + 1];
+  GdkRGBA tool_fill_colors[WAYTATOR_TOOL_MOVE + 1];
   int blur_type;
   WaytatorEraserStyle eraser_style;
   GPtrArray *ocr_lines;
@@ -209,7 +210,6 @@ void waytator_window_set_zoom_at(WaytatorWindow *self,
                                  double          viewport_y);
 void waytator_window_update_size_controls(WaytatorWindow *self);
 void waytator_window_update_tool_ui(WaytatorWindow *self);
-void waytator_window_save_preferences(WaytatorWindow *self);
 void waytator_window_queue_fit_zoom(WaytatorWindow *self);
 void waytator_window_sync_state(WaytatorWindow *self);
 void waytator_window_install_history_actions(GtkWidgetClass *widget_class);

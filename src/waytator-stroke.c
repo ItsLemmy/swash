@@ -24,6 +24,7 @@ waytator_tool_width(WaytatorTool tool)
   switch (tool) {
   case WAYTATOR_TOOL_PAN:
   case WAYTATOR_TOOL_CROP:
+  case WAYTATOR_TOOL_MOVE:
     return 0.0;
   case WAYTATOR_TOOL_MARKER:
     return 24.0;
@@ -118,6 +119,8 @@ waytator_stroke_free(WaytatorStroke *stroke)
     return;
 
   g_clear_pointer(&stroke->points, g_array_unref);
+  if (stroke->blur_cache != NULL)
+    cairo_surface_destroy(stroke->blur_cache);
   g_free(stroke->text);
   g_free(stroke);
 }
@@ -163,7 +166,8 @@ waytator_stroke_set_last_point(WaytatorStroke *stroke,
 void
 waytator_stroke_render(cairo_t         *cr,
                        WaytatorStroke  *stroke,
-                       cairo_surface_t *source_surface)
+                       cairo_surface_t *source_surface,
+                       guint            image_generation)
 {
   const guint len = stroke->points->len;
   guint i;
@@ -296,18 +300,11 @@ waytator_stroke_render(cairo_t         *cr,
       return;
     }
     case WAYTATOR_TOOL_BLUR: {
-      cairo_surface_t *temp_surf;
-      unsigned char *dst_data;
-      int dst_stride;
       int block_size;
       int b_left;
       int b_top;
       int b_right;
       int b_bottom;
-      int src_w;
-      int src_h;
-      int src_stride;
-      unsigned char *src_data;
       int tw;
       int th;
 
@@ -319,100 +316,119 @@ waytator_stroke_render(cairo_t         *cr,
       b_top = floor(top / block_size) * block_size;
       b_right = ceil((left + rect_width) / block_size) * block_size;
       b_bottom = ceil((top + rect_height) / block_size) * block_size;
-
-      cairo_surface_flush(source_surface);
-      src_w = cairo_image_surface_get_width(source_surface);
-      src_h = cairo_image_surface_get_height(source_surface);
-      src_stride = cairo_image_surface_get_stride(source_surface);
-      src_data = cairo_image_surface_get_data(source_surface);
-
-      if (src_data == NULL || src_w <= 0 || src_h <= 0)
-        return;
-
       tw = b_right - b_left;
       th = b_bottom - b_top;
       if (tw <= 0 || th <= 0)
         return;
 
-      temp_surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
-      dst_data = cairo_image_surface_get_data(temp_surf);
-      dst_stride = cairo_image_surface_get_stride(temp_surf);
+      if (stroke->blur_cache == NULL
+          || stroke->blur_cache_generation != image_generation
+          || stroke->blur_cache_x != b_left
+          || stroke->blur_cache_y != b_top
+          || cairo_image_surface_get_width(stroke->blur_cache) != tw
+          || cairo_image_surface_get_height(stroke->blur_cache) != th) {
+        int src_w;
+        int src_h;
+        int src_stride;
+        unsigned char *src_data;
+        unsigned char *dst_data;
+        int dst_stride;
 
-      if (stroke->blur_type == 1) {
-        int y;
+        cairo_surface_flush(source_surface);
+        src_w = cairo_image_surface_get_width(source_surface);
+        src_h = cairo_image_surface_get_height(source_surface);
+        src_stride = cairo_image_surface_get_stride(source_surface);
+        src_data = cairo_image_surface_get_data(source_surface);
 
-        for (y = 0; y < th; y += block_size) {
-          int x;
+        if (src_data == NULL || src_w <= 0 || src_h <= 0)
+          return;
 
-          for (x = 0; x < tw; x += block_size) {
-            int cx = CLAMP(b_left + x + block_size / 2, 0, src_w - 1);
-            int cy = CLAMP(b_top + y + block_size / 2, 0, src_h - 1);
-            uint32_t pixel = *(uint32_t *) (src_data + cy * src_stride + cx * 4);
-            int by;
+        if (stroke->blur_cache != NULL)
+          cairo_surface_destroy(stroke->blur_cache);
 
-            for (by = 0; by < block_size && y + by < th; by++) {
-              uint32_t *dst_row = (uint32_t *) (dst_data + (y + by) * dst_stride);
-              int bx;
+        stroke->blur_cache = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
+        stroke->blur_cache_generation = image_generation;
+        stroke->blur_cache_x = b_left;
+        stroke->blur_cache_y = b_top;
+        dst_data = cairo_image_surface_get_data(stroke->blur_cache);
+        dst_stride = cairo_image_surface_get_stride(stroke->blur_cache);
 
-              for (bx = 0; bx < block_size && x + bx < tw; bx++)
-                dst_row[x + bx] = pixel;
-            }
-          }
-        }
-      } else {
-        int kernel_size = MAX(2, (int) stroke->width);
-        int step = MAX(1, kernel_size / 4);
-        int y;
+        if (stroke->blur_type == 1) {
+          int y;
 
-        for (y = 0; y < th; y += step) {
-          int x;
+          for (y = 0; y < th; y += block_size) {
+            int x;
 
-          for (x = 0; x < tw; x += step) {
-            int sum_r = 0;
-            int sum_g = 0;
-            int sum_b = 0;
-            int sum_a = 0;
-            int count = 0;
-            int dy;
-            uint32_t out_pixel = 0;
+            for (x = 0; x < tw; x += block_size) {
+              int cx = CLAMP(b_left + x + block_size / 2, 0, src_w - 1);
+              int cy = CLAMP(b_top + y + block_size / 2, 0, src_h - 1);
+              uint32_t pixel = *(uint32_t *) (src_data + cy * src_stride + cx * 4);
+              int by;
 
-            for (dy = -kernel_size / 2; dy <= kernel_size / 2; dy += step) {
-              int dx;
+              for (by = 0; by < block_size && y + by < th; by++) {
+                uint32_t *dst_row = (uint32_t *) (dst_data + (y + by) * dst_stride);
+                int bx;
 
-              for (dx = -kernel_size / 2; dx <= kernel_size / 2; dx += step) {
-                int cx = CLAMP(b_left + x + dx, 0, src_w - 1);
-                int cy = CLAMP(b_top + y + dy, 0, src_h - 1);
-                uint32_t pixel = *(uint32_t *) (src_data + cy * src_stride + cx * 4);
-
-                sum_b += (pixel & 0xFF);
-                sum_g += ((pixel >> 8) & 0xFF);
-                sum_r += ((pixel >> 16) & 0xFF);
-                sum_a += ((pixel >> 24) & 0xFF);
-                count++;
+                for (bx = 0; bx < block_size && x + bx < tw; bx++)
+                  dst_row[x + bx] = pixel;
               }
             }
+          }
+        } else {
+          int kernel_size = MAX(2, (int) stroke->width);
+          int step = MAX(1, kernel_size / 4);
+          int y;
 
-            if (count > 0)
-              out_pixel = ((sum_a / count) << 24) | ((sum_r / count) << 16) | ((sum_g / count) << 8) | (sum_b / count);
+          for (y = 0; y < th; y += step) {
+            int x;
 
-            for (int by = 0; by < step && y + by < th; by++) {
-              uint32_t *dst_row = (uint32_t *) (dst_data + (y + by) * dst_stride);
+            for (x = 0; x < tw; x += step) {
+              int sum_r = 0;
+              int sum_g = 0;
+              int sum_b = 0;
+              int sum_a = 0;
+              int count = 0;
+              int dy;
+              uint32_t out_pixel = 0;
 
-              for (int bx = 0; bx < step && x + bx < tw; bx++)
-                dst_row[x + bx] = out_pixel;
+              for (dy = -kernel_size / 2; dy <= kernel_size / 2; dy += step) {
+                int dx;
+
+                for (dx = -kernel_size / 2; dx <= kernel_size / 2; dx += step) {
+                  int cx = CLAMP(b_left + x + dx, 0, src_w - 1);
+                  int cy = CLAMP(b_top + y + dy, 0, src_h - 1);
+                  uint32_t pixel = *(uint32_t *) (src_data + cy * src_stride + cx * 4);
+
+                  sum_b += (pixel & 0xFF);
+                  sum_g += ((pixel >> 8) & 0xFF);
+                  sum_r += ((pixel >> 16) & 0xFF);
+                  sum_a += ((pixel >> 24) & 0xFF);
+                  count++;
+                }
+              }
+
+              if (count > 0)
+                out_pixel = ((sum_a / count) << 24) | ((sum_r / count) << 16) | ((sum_g / count) << 8) | (sum_b / count);
+
+              for (int by = 0; by < step && y + by < th; by++) {
+                uint32_t *dst_row = (uint32_t *) (dst_data + (y + by) * dst_stride);
+
+                for (int bx = 0; bx < step && x + bx < tw; bx++)
+                  dst_row[x + bx] = out_pixel;
+              }
             }
           }
         }
+
+        cairo_surface_mark_dirty(stroke->blur_cache);
       }
 
-      cairo_surface_mark_dirty(temp_surf);
       cairo_save(cr);
       cairo_rectangle(cr, left, top, rect_width, rect_height);
       cairo_clip(cr);
-      cairo_set_source_surface(cr, temp_surf, b_left, b_top);
+      cairo_set_source_surface(cr, stroke->blur_cache, stroke->blur_cache_x, stroke->blur_cache_y);
       cairo_paint(cr);
       cairo_restore(cr);
-      cairo_surface_destroy(temp_surf);
       return;
     }
     default:
@@ -588,11 +604,12 @@ waytator_stroke_intersects_segment(WaytatorStroke *stroke,
     switch (stroke->tool) {
     case WAYTATOR_TOOL_LINE:
     case WAYTATOR_TOOL_ARROW:
-    case WAYTATOR_TOOL_BLUR:
       return waytator_distance_to_segment(start->x, start->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0
           || waytator_distance_to_segment(end->x, end->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0
           || waytator_distance_to_segment(x0, y0, start->x, start->y, end->x, end->y) <= radius + stroke->width / 2.0
           || waytator_distance_to_segment(x1, y1, start->x, start->y, end->x, end->y) <= radius + stroke->width / 2.0;
+    case WAYTATOR_TOOL_BLUR:
+      return waytator_segment_intersects_rect(x0, y0, x1, y1, left, top, right, bottom);
     case WAYTATOR_TOOL_RECTANGLE:
       return waytator_distance_to_segment(x0, y0, left, top, right, top) <= radius + stroke->width / 2.0
           || waytator_distance_to_segment(x0, y0, right, top, right, bottom) <= radius + stroke->width / 2.0
@@ -636,4 +653,64 @@ waytator_stroke_intersects_segment(WaytatorStroke *stroke,
   }
 
   return FALSE;
+}
+
+gboolean
+waytator_stroke_hit_test(WaytatorStroke *stroke,
+                         double          x,
+                         double          y,
+                         double          tolerance)
+{
+  return waytator_stroke_intersects_segment(stroke, x, y, x, y, tolerance);
+}
+
+void
+waytator_stroke_offset(WaytatorStroke *stroke,
+                       double          dx,
+                       double          dy)
+{
+  for (guint i = 0; i < stroke->points->len; i++) {
+    WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, i);
+
+    point->x += dx;
+    point->y += dy;
+  }
+
+  if (stroke->blur_cache != NULL) {
+    cairo_surface_destroy(stroke->blur_cache);
+    stroke->blur_cache = NULL;
+  }
+}
+
+void
+waytator_stroke_get_bounds(WaytatorStroke *stroke,
+                           double         *out_x,
+                           double         *out_y,
+                           double         *out_w,
+                           double         *out_h)
+{
+  double min_x = G_MAXDOUBLE;
+  double min_y = G_MAXDOUBLE;
+  double max_x = -G_MAXDOUBLE;
+  double max_y = -G_MAXDOUBLE;
+  const double half_w = stroke->width / 2.0;
+
+  if (stroke->points->len == 0) {
+    *out_x = *out_y = *out_w = *out_h = 0.0;
+    return;
+  }
+
+  for (guint i = 0; i < stroke->points->len; i++) {
+    const WaytatorPoint *p = &g_array_index(stroke->points, WaytatorPoint, i);
+
+    if (p->x < min_x) min_x = p->x;
+    if (p->y < min_y) min_y = p->y;
+    if (p->x > max_x) max_x = p->x;
+    if (p->y > max_y) max_y = p->y;
+  }
+
+  *out_x = min_x - half_w;
+  *out_y = min_y - half_w;
+  *out_w = (max_x - min_x) + stroke->width;
+  *out_h = (max_y - min_y) + stroke->width;
 }

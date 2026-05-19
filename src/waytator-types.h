@@ -16,6 +16,7 @@ typedef enum {
   WAYTATOR_TOOL_OCR,
   WAYTATOR_TOOL_TEXT,
   WAYTATOR_TOOL_BLUR,
+  WAYTATOR_TOOL_MOVE,
 } WaytatorTool;
 
 typedef enum {
@@ -50,6 +51,10 @@ typedef struct {
   int blur_type;
   GArray *points;
   char *text;
+  cairo_surface_t *blur_cache;
+  guint blur_cache_generation;
+  int blur_cache_x;
+  int blur_cache_y;
 } WaytatorStroke;
 
 typedef struct {
@@ -82,7 +87,8 @@ typedef enum {
 typedef WaytatorStroke *(*WaytatorStrokeCopyFunc)(WaytatorStroke *stroke);
 typedef void (*WaytatorStrokeRenderFunc)(cairo_t *cr,
                                          WaytatorStroke *stroke,
-                                         cairo_surface_t *source_surface);
+                                         cairo_surface_t *source_surface,
+                                         guint image_generation);
 
 typedef struct {
   WaytatorExportKind kind;
@@ -95,6 +101,7 @@ typedef struct {
   char *copy_format;
   gboolean allow_marker_overlap;
   WaytatorStrokeRenderFunc render_stroke;
+  guint image_generation;
 } WaytatorExportRequest;
 
 typedef struct {

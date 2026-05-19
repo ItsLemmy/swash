@@ -18,6 +18,7 @@ struct _WaytatorDocument {
   int image_width;
   int image_height;
   gsize image_stride;
+  guint image_generation;
   WaytatorDocumentSnapshot *saved_state;
   GQueue *undo_history;
   GQueue *redo_history;
@@ -169,6 +170,8 @@ static void
 waytator_document_apply_snapshot(WaytatorDocument         *document,
                                  WaytatorDocumentSnapshot *snapshot)
 {
+  gboolean image_changed = document->image_pixels != snapshot->image_pixels;
+
   g_clear_pointer(&document->image_pixels, g_bytes_unref);
   g_clear_pointer(&document->strokes, g_ptr_array_unref);
 
@@ -177,6 +180,9 @@ waytator_document_apply_snapshot(WaytatorDocument         *document,
   document->image_height = snapshot->image_height;
   document->image_stride = snapshot->image_stride;
   document->strokes = g_steal_pointer(&snapshot->strokes);
+
+  if (image_changed)
+    document->image_generation++;
 
   waytator_document_snapshot_free(snapshot);
 }
@@ -257,6 +263,13 @@ waytator_document_set_image(WaytatorDocument *document,
   document->image_width = pixels != NULL ? width : 0;
   document->image_height = pixels != NULL ? height : 0;
   document->image_stride = pixels != NULL ? stride : 0;
+  document->image_generation++;
+}
+
+guint
+waytator_document_get_image_generation(WaytatorDocument *document)
+{
+  return document->image_generation;
 }
 
 gboolean
