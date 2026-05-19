@@ -66,8 +66,12 @@ waytator_window_blur_warning_response(GObject      *source_object,
   const int response = gtk_alert_dialog_choose_finish(dialog, result, &error);
 
   self->blur_commit_warning_showing = FALSE;
-  if (error == NULL && response == 1) {
+  if (error == NULL && (response == 1 || response == 2)) {
     self->blur_commit_warning_accepted = TRUE;
+    if (response == 2) {
+      self->skip_blur_warning = TRUE;
+      waytator_window_save_preferences(self);
+    }
     waytator_window_commit_blur_stroke(self);
     waytator_window_maybe_auto_copy_latest_change(self);
   } else {
@@ -82,7 +86,7 @@ waytator_window_blur_warning_response(GObject      *source_object,
 static void
 waytator_window_show_blur_warning(WaytatorWindow *self)
 {
-  const char *buttons[] = { "Cancel", "Apply Blur", NULL };
+  const char *buttons[] = { "Cancel", "Apply Blur", "Apply and Don’t Ask Again", NULL };
   g_autoptr(GtkAlertDialog) dialog = NULL;
 
   if (self->blur_commit_warning_showing)
@@ -520,6 +524,60 @@ waytator_window_global_key_pressed(GtkEventControllerKey *controller,
       && waytator_window_parse_shortcut_match(self->copy_shortcut_accel, keyval, state)) {
     gtk_widget_activate_action(GTK_WIDGET(self), "win.copy-buffer", NULL);
     return TRUE;
+  }
+
+  if ((state & gtk_accelerator_get_default_mod_mask()) == 0 && !self->drawing) {
+    GtkToggleButton *target = NULL;
+
+    switch (keyval) {
+    case GDK_KEY_b:
+    case GDK_KEY_B:
+      target = self->brush_tool_button;
+      break;
+    case GDK_KEY_a:
+    case GDK_KEY_A:
+      target = self->arrow_tool_button;
+      break;
+    case GDK_KEY_s:
+    case GDK_KEY_S:
+      gtk_menu_button_popup(self->shapes_tool_button);
+      return TRUE;
+    case GDK_KEY_h:
+    case GDK_KEY_H:
+      target = self->highlighter_tool_button;
+      break;
+    case GDK_KEY_t:
+    case GDK_KEY_T:
+      target = self->text_tool_button;
+      break;
+    case GDK_KEY_u:
+    case GDK_KEY_U:
+      target = self->blur_tool_button;
+      break;
+    case GDK_KEY_e:
+    case GDK_KEY_E:
+      target = self->eraser_tool_button;
+      break;
+    case GDK_KEY_c:
+    case GDK_KEY_C:
+      target = self->crop_tool_button;
+      break;
+    case GDK_KEY_p:
+    case GDK_KEY_P:
+      target = self->pan_tool_button;
+      break;
+    case GDK_KEY_r:
+    case GDK_KEY_R:
+      target = self->ocr_tool_button;
+      break;
+    default:
+      break;
+    }
+
+    if (target != NULL && self->texture != NULL) {
+      gtk_toggle_button_set_active(target, TRUE);
+      return TRUE;
+    }
   }
 
   return FALSE;
@@ -1123,10 +1181,14 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
     waytator_stroke_add_point(self->current_stroke, image_x, image_y);
 
   if (self->active_tool == WAYTATOR_TOOL_BLUR && !self->blur_commit_warning_accepted) {
-    if (sequence != NULL && sequence == self->cancelled_touch_draw_sequence)
-      self->cancelled_touch_draw_sequence = NULL;
-    waytator_window_show_blur_warning(self);
-    return;
+    if (self->skip_blur_warning) {
+      self->blur_commit_warning_accepted = TRUE;
+    } else {
+      if (sequence != NULL && sequence == self->cancelled_touch_draw_sequence)
+        self->cancelled_touch_draw_sequence = NULL;
+      waytator_window_show_blur_warning(self);
+      return;
+    }
   }
 
   if (self->active_tool == WAYTATOR_TOOL_BLUR)

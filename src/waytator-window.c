@@ -40,11 +40,14 @@ static const char *waytator_window_angle_snap_modifier_label(GdkModifierType mod
 static void waytator_window_highlighter_overlap_changed(AdwSwitchRow   *row,
                                                         GParamSpec     *pspec,
                                                         WaytatorWindow *self);
+static void waytator_window_skip_blur_warning_changed(AdwSwitchRow   *row,
+                                                       GParamSpec     *pspec,
+                                                       WaytatorWindow *self);
 
 static void waytator_window_update_window_controls(WaytatorWindow *self);
 static void waytator_window_update_window_background(WaytatorWindow *self);
 static void waytator_window_update_widget_appearance(WaytatorWindow *self);
-static void waytator_window_save_preferences(WaytatorWindow *self);
+void waytator_window_save_preferences(WaytatorWindow *self);
 
 static void
 waytator_window_apply_default_tool_colors(WaytatorWindow *self)
@@ -264,6 +267,12 @@ waytator_window_load_preferences(WaytatorWindow *self)
                                                              "allow_highlighter_overlap",
                                                              NULL);
 
+  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "skip_blur_warning", NULL))
+    self->skip_blur_warning = g_key_file_get_boolean(key_file,
+                                                      WAYTATOR_SETTINGS_GROUP,
+                                                      "skip_blur_warning",
+                                                      NULL);
+
   if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "copy_shortcut", NULL)) {
     g_autofree char *accelerator = g_key_file_get_string(key_file,
                                                          WAYTATOR_SETTINGS_GROUP,
@@ -304,7 +313,7 @@ waytator_window_load_preferences(WaytatorWindow *self)
                                        &self->default_fill_color);
 }
 
-static void
+void
 waytator_window_save_preferences(WaytatorWindow *self)
 {
   g_autofree char *path = waytator_window_preferences_path();
@@ -353,6 +362,10 @@ waytator_window_save_preferences(WaytatorWindow *self)
                          WAYTATOR_SETTINGS_GROUP,
                          "allow_highlighter_overlap",
                          self->allow_highlighter_overlap);
+  g_key_file_set_boolean(key_file,
+                         WAYTATOR_SETTINGS_GROUP,
+                         "skip_blur_warning",
+                         self->skip_blur_warning);
   g_key_file_set_string(key_file,
                         WAYTATOR_SETTINGS_GROUP,
                         "copy_shortcut",
@@ -534,6 +547,17 @@ waytator_window_highlighter_overlap_changed(AdwSwitchRow   *row,
 
   self->allow_highlighter_overlap = adw_switch_row_get_active(row);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+  waytator_window_save_preferences(self);
+}
+
+static void
+waytator_window_skip_blur_warning_changed(AdwSwitchRow   *row,
+                                          GParamSpec     *pspec,
+                                          WaytatorWindow *self)
+{
+  (void) pspec;
+
+  self->skip_blur_warning = adw_switch_row_get_active(row);
   waytator_window_save_preferences(self);
 }
 
@@ -764,6 +788,7 @@ waytator_window_show_preferences(WaytatorWindow *self)
   AdwSwitchRow *copy_shortcut_enabled_row;
   AdwSwitchRow *auto_copy_latest_change_row;
   AdwSwitchRow *highlighter_overlap_row;
+  AdwSwitchRow *skip_blur_warning_row;
   AdwComboRow *angle_snap_modifier_row;
   AdwActionRow *opacity_row;
   AdwActionRow *floating_controls_opacity_row;
@@ -801,6 +826,7 @@ waytator_window_show_preferences(WaytatorWindow *self)
   copy_shortcut_enabled_row = ADW_SWITCH_ROW(adw_switch_row_new());
   auto_copy_latest_change_row = ADW_SWITCH_ROW(adw_switch_row_new());
   highlighter_overlap_row = ADW_SWITCH_ROW(adw_switch_row_new());
+  skip_blur_warning_row = ADW_SWITCH_ROW(adw_switch_row_new());
   angle_snap_modifier_row = ADW_COMBO_ROW(adw_combo_row_new());
   opacity_row = ADW_ACTION_ROW(adw_action_row_new());
   floating_controls_opacity_row = ADW_ACTION_ROW(adw_action_row_new());
@@ -912,6 +938,8 @@ waytator_window_show_preferences(WaytatorWindow *self)
   adw_switch_row_set_active(auto_copy_latest_change_row, self->auto_copy_latest_change);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(highlighter_overlap_row), "Allow highlighter strokes to overlap");
   adw_switch_row_set_active(highlighter_overlap_row, self->allow_highlighter_overlap);
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(skip_blur_warning_row), "Skip blur confirmation dialog");
+  adw_switch_row_set_active(skip_blur_warning_row, self->skip_blur_warning);
   gtk_color_dialog_set_with_alpha(default_fill_color_dialog, TRUE);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(default_primary_color_row), "Primary");
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(default_highlighter_color_row), "Highlighter");
@@ -934,6 +962,7 @@ waytator_window_show_preferences(WaytatorWindow *self)
 
   adw_preferences_group_add(group, GTK_WIDGET(row));
   adw_preferences_group_add(group, GTK_WIDGET(highlighter_overlap_row));
+  adw_preferences_group_add(group, GTK_WIDGET(skip_blur_warning_row));
   adw_preferences_group_add(group, GTK_WIDGET(auto_copy_latest_change_row));
   adw_preferences_group_add(group, GTK_WIDGET(default_primary_color_row));
   adw_preferences_group_add(group, GTK_WIDGET(default_highlighter_color_row));
@@ -990,6 +1019,10 @@ waytator_window_show_preferences(WaytatorWindow *self)
   g_signal_connect(highlighter_overlap_row,
                    "notify::active",
                    G_CALLBACK(waytator_window_highlighter_overlap_changed),
+                   self);
+  g_signal_connect(skip_blur_warning_row,
+                   "notify::active",
+                   G_CALLBACK(waytator_window_skip_blur_warning_changed),
                    self);
   g_signal_connect(default_primary_color_button,
                    "notify::rgba",
@@ -2669,6 +2702,7 @@ waytator_window_init_state(WaytatorWindow *self)
   self->allow_highlighter_overlap = TRUE;
   self->floating_controls_blur = TRUE;
   self->auto_copy_latest_change = FALSE;
+  self->skip_blur_warning = FALSE;
   self->floating_controls_opacity = 0.7;
   self->default_primary_color = (GdkRGBA){0.96, 0.2, 0.28, 1.0};
   self->default_highlighter_color = (GdkRGBA){1.0, 0.91, 0.2, 1.0};

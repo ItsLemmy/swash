@@ -128,6 +128,7 @@ struct _WaytatorWindow {
   gboolean interaction_has_undo_step;
   gboolean blur_commit_warning_accepted;
   gboolean blur_commit_warning_showing;
+  gboolean skip_blur_warning;
   GdkEventSequence *active_touch_draw_sequence;
   GdkEventSequence *cancelled_touch_draw_sequence;
   GHashTable *active_touch_sequences;
@@ -208,6 +209,7 @@ void waytator_window_set_zoom_at(WaytatorWindow *self,
                                  double          viewport_y);
 void waytator_window_update_size_controls(WaytatorWindow *self);
 void waytator_window_update_tool_ui(WaytatorWindow *self);
+void waytator_window_save_preferences(WaytatorWindow *self);
 void waytator_window_queue_fit_zoom(WaytatorWindow *self);
 void waytator_window_sync_state(WaytatorWindow *self);
 void waytator_window_install_history_actions(GtkWidgetClass *widget_class);
