@@ -4,10 +4,7 @@ Swash is a fast screenshot annotator and lightweight image editor for Linux,
 built with GTK 4 and libadwaita.
 
 <p align="center">
-  <img width="600" alt="Swash editing a screenshot" src="https://github.com/user-attachments/assets/4bcc1c58-5834-4f35-877b-5f94a914d6ce" />
-</p>
-<p align="center">
-  <img width="600" alt="Swash annotation tools" src="https://github.com/user-attachments/assets/91c949f3-f106-433f-a1d6-62742a72831d" />
+  <img width="1000" alt="Swash annotating the MDN CSS documentation" src="docs/images/swash-screenshot.png" />
 </p>
 
 ## Features
