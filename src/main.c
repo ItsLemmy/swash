@@ -2,9 +2,31 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "swash-config.h"
 #include "window.h"
 
 #define SWASH_APP_ID "dev.lemmy.swash"
+
+static const GOptionEntry app_options[] = {
+  {
+    .long_name = "stdin",
+    .arg = G_OPTION_ARG_NONE,
+    .description = "Read image data from standard input",
+  },
+  {
+    .long_name = "name",
+    .arg = G_OPTION_ARG_STRING,
+    .description = "Suggested filename for standard input",
+    .arg_description = "NAME",
+  },
+  {
+    .long_name = "version",
+    .short_name = 'v',
+    .arg = G_OPTION_ARG_NONE,
+    .description = "Show version information",
+  },
+  { 0 },
+};
 
 static GBytes *
 app_read_stream_bytes(GInputStream *stream,
@@ -127,14 +149,31 @@ app_open(GApplication  *app,
 }
 
 static int
+app_handle_local_options(GApplication *app,
+                         GVariantDict *options,
+                         gpointer      user_data)
+{
+  (void) app;
+  (void) user_data;
+
+  if (g_variant_dict_contains(options, "version")) {
+    g_print("swash %s\n", SWASH_VERSION);
+    return 0;
+  }
+
+  return -1;
+}
+
+static int
 app_command_line(GApplication            *app,
                  GApplicationCommandLine *command_line,
                  gpointer                 user_data)
 {
   gchar **arguments = NULL;
+  GVariantDict *options;
   int argc = 0;
   int status = 0;
-  gboolean use_stdin = FALSE;
+  gboolean use_stdin;
   const char *stdin_name = "stdin.png";
   g_autoptr(GError) error = NULL;
   g_autoptr(GFile) file = NULL;
@@ -143,42 +182,32 @@ app_command_line(GApplication            *app,
   (void) user_data;
 
   arguments = g_application_command_line_get_arguments(command_line, &argc);
+  options = g_application_command_line_get_options_dict(command_line);
+  use_stdin = g_variant_dict_contains(options, "stdin");
+  g_variant_dict_lookup(options, "name", "&s", &stdin_name);
 
-  if (argc > 4) {
+  if (argc > 2) {
     g_application_command_line_printerr(command_line,
-                                        "Usage: %s [--name NAME] [IMAGE|-|--stdin]\n",
+                                        "Usage: %s [OPTION…] [IMAGE|-]\n"
+                                        "Try '%s --help' for more information.\n",
+                                        arguments[0],
                                         arguments[0]);
     status = 1;
     goto done;
   }
 
-  for (int i = 1; i < argc; i++) {
-    if (g_strcmp0(arguments[i], "--name") == 0) {
-      if (i + 1 >= argc) {
-        g_application_command_line_printerr(command_line,
-                                            "Missing value for --name\n");
-        status = 1;
-        goto done;
-      }
-
-      stdin_name = arguments[++i];
-    } else if (g_strcmp0(arguments[i], "-") == 0 || g_strcmp0(arguments[i], "--stdin") == 0) {
+  if (argc == 2) {
+    if (g_strcmp0(arguments[1], "-") == 0)
       use_stdin = TRUE;
-    } else if (arguments[i][0] == '-') {
-      g_application_command_line_printerr(command_line,
-                                          "Unknown option: %s\n",
-                                          arguments[i]);
-      status = 1;
-      goto done;
-    } else if (file == NULL) {
-      file = g_application_command_line_create_file_for_arg(command_line, arguments[i]);
-    } else {
-      g_application_command_line_printerr(command_line,
-                                          "Usage: %s [--name NAME] [IMAGE|-|--stdin]\n",
-                                          arguments[0]);
-      status = 1;
-      goto done;
-    }
+    else
+      file = g_application_command_line_create_file_for_arg(command_line, arguments[1]);
+  }
+
+  if (use_stdin && file != NULL) {
+    g_application_command_line_printerr(command_line,
+                                        "Cannot use --stdin together with an image path\n");
+    status = 1;
+    goto done;
   }
 
   window = app_get_or_create_window(ADW_APPLICATION(app));
@@ -233,6 +262,11 @@ main(int   argc,
   app = adw_application_new(SWASH_APP_ID,
                              G_APPLICATION_HANDLES_COMMAND_LINE | G_APPLICATION_HANDLES_OPEN);
   g_application_set_resource_base_path(G_APPLICATION(app), "/dev/lemmy/swash");
+  g_application_set_option_context_parameter_string(G_APPLICATION(app), "[IMAGE|-]");
+  g_application_set_option_context_summary(
+    G_APPLICATION(app),
+    "Annotate screenshots and edit images");
+  g_application_add_main_option_entries(G_APPLICATION(app), app_options);
   gtk_window_set_default_icon_name(SWASH_APP_ID);
 
   g_action_map_add_action_entries(G_ACTION_MAP(app),
@@ -251,6 +285,7 @@ main(int   argc,
 
   g_signal_connect(app, "activate", G_CALLBACK(app_activate), NULL);
   g_signal_connect(app, "open", G_CALLBACK(app_open), NULL);
+  g_signal_connect(app, "handle-local-options", G_CALLBACK(app_handle_local_options), NULL);
   g_signal_connect(app, "command-line", G_CALLBACK(app_command_line), NULL);
   g_signal_connect(app, "shutdown", G_CALLBACK(shutdown_action), NULL);
 

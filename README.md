@@ -58,6 +58,13 @@ Launch Swash without an image:
 swash
 ```
 
+Show command-line options or the installed version:
+
+```bash
+swash --help
+swash --version
+```
+
 Open an existing image:
 
 ```bash
