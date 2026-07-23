@@ -1,6 +1,9 @@
 #include "window-private.h"
 
+#include "editor-utils.h"
 #include "stroke.h"
+
+#include <math.h>
 
 static gboolean
 swash_tool_has_size_control(SwashTool tool)
@@ -19,19 +22,53 @@ swash_window_update_size_controls(SwashWindow *self)
   const gboolean is_text_tool = self->active_tool == SWASH_TOOL_TEXT;
   const double value = self->tool_widths[self->active_tool];
   const double text_value = CLAMP(value, 8.0, 200.0);
-  const double precise_value = CLAMP(value, 1.0, 100.0);
+  const double minimum = is_text_tool ? 8.0 : 1.0;
+  const double maximum = is_text_tool ? 200.0 : 100.0;
+  const double precise_value = CLAMP(value, minimum, maximum);
+  const double default_value = swash_tool_size_preset(self->active_tool, 1.0);
+  const double epsilon = 0.001;
   g_autofree char *label = g_strdup_printf("%.0f px", self->tool_widths[self->active_tool]);
 
   self->updating_ui = TRUE;
   gtk_adjustment_configure(text_adjustment, text_value, 8.0, 200.0, 1.0, 8.0, 0.0);
-  gtk_adjustment_configure(precise_adjustment, precise_value, 1.0, 100.0, 1.0, 8.0, 0.0);
+  gtk_adjustment_configure(precise_adjustment, precise_value, minimum, maximum, 1.0, 8.0, 0.0);
   gtk_spin_button_set_value(self->text_size_spin, text_value);
   gtk_spin_button_set_value(self->precise_size_spin, precise_value);
   gtk_label_set_text(self->size_button_label, label);
   self->updating_ui = FALSE;
+  gtk_widget_set_sensitive(GTK_WIDGET(self->small_size_button),
+                           fabs(value - swash_tool_size_preset(self->active_tool, 0.5)) > epsilon);
+  gtk_widget_set_sensitive(GTK_WIDGET(self->medium_size_button),
+                           fabs(value - CLAMP(default_value, minimum, maximum)) > epsilon);
+  gtk_widget_set_sensitive(GTK_WIDGET(self->large_size_button),
+                           fabs(value - swash_tool_size_preset(self->active_tool, 2.0)) > epsilon);
+  gtk_widget_set_sensitive(GTK_WIDGET(self->reset_size_button),
+                           fabs(value - CLAMP(default_value, minimum, maximum)) > epsilon);
+}
 
-  if (is_text_tool)
-    gtk_menu_button_popdown(self->size_button);
+static void
+swash_window_size_preset_clicked(GtkButton *button,
+                                    gpointer   user_data)
+{
+  SwashWindow *self = SWASH_WINDOW(user_data);
+  const double multiplier = *(const double *) g_object_get_data(G_OBJECT(button),
+                                                                 "size-multiplier");
+
+  self->tool_widths[self->active_tool] =
+    swash_tool_size_preset(self->active_tool, multiplier);
+  swash_window_update_size_controls(self);
+  swash_window_update_canvas_cursor(self);
+  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+}
+
+static void
+swash_window_reset_size_clicked(GtkButton *button,
+                                   gpointer   user_data)
+{
+  static const double default_multiplier = 1.0;
+
+  g_object_set_data(G_OBJECT(button), "size-multiplier", (gpointer) &default_multiplier);
+  swash_window_size_preset_clicked(button, user_data);
 }
 
 static void
@@ -105,6 +142,9 @@ swash_window_tool_toggled(GtkToggleButton *button,
   if (!gtk_toggle_button_get_active(button))
     return;
 
+  if (self->active_tool == SWASH_TOOL_CROP && button != self->crop_tool_button)
+    swash_window_cancel_pending_crop(self);
+
   if (self->text_editing)
     swash_window_text_editing_commit(self);
 
@@ -158,6 +198,7 @@ swash_window_width_changed(GtkRange *range,
   if (!self->updating_ui) {
     self->tool_widths[self->active_tool] = gtk_range_get_value(range);
     swash_window_update_size_controls(self);
+    swash_window_update_canvas_cursor(self);
     gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
   }
 }
@@ -177,6 +218,7 @@ swash_window_color_changed(GObject    *object,
 
     if (rgba != NULL) {
       self->tool_colors[self->active_tool] = *rgba;
+      swash_window_update_canvas_cursor(self);
       gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
     }
   }
@@ -211,6 +253,7 @@ swash_window_text_size_changed(GtkSpinButton *spin_button,
   if (!self->updating_ui) {
     self->tool_widths[self->active_tool] = gtk_spin_button_get_value(spin_button);
     swash_window_update_size_controls(self);
+    swash_window_update_canvas_cursor(self);
     gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
   }
 }
@@ -268,10 +311,8 @@ swash_window_update_tool_ui(SwashWindow *self)
                          swash_tool_has_size_control(self->active_tool) &&
                          self->active_tool != SWASH_TOOL_TEXT);
   gtk_widget_set_visible(GTK_WIDGET(self->size_button),
-                         swash_tool_has_size_control(self->active_tool)
-                         && self->active_tool != SWASH_TOOL_TEXT);
-  gtk_widget_set_visible(GTK_WIDGET(self->text_size_spin),
-                         self->active_tool == SWASH_TOOL_TEXT);
+                         swash_tool_has_size_control(self->active_tool));
+  gtk_widget_set_visible(GTK_WIDGET(self->text_size_spin), FALSE);
   gtk_widget_set_visible(GTK_WIDGET(self->blur_type_dropdown),
                          self->active_tool == SWASH_TOOL_BLUR);
 
@@ -284,6 +325,8 @@ swash_window_update_tool_ui(SwashWindow *self)
     swash_window_maybe_start_ocr(self);
   swash_window_update_ocr_overlay(self);
   swash_window_update_ocr_panel(self);
+  swash_window_update_crop_controls(self);
+  swash_window_update_canvas_cursor(self);
 }
 
 void
@@ -317,6 +360,17 @@ swash_window_setup_tool_signals(SwashWindow *self)
   g_signal_connect(self->width_scale, "value-changed", G_CALLBACK(swash_window_width_changed), self);
   g_signal_connect(self->text_size_spin, "value-changed", G_CALLBACK(swash_window_text_size_changed), self);
   g_signal_connect(self->precise_size_spin, "value-changed", G_CALLBACK(swash_window_text_size_changed), self);
+  {
+    static const double multipliers[] = {0.5, 1.0, 2.0};
+
+    g_object_set_data(G_OBJECT(self->small_size_button), "size-multiplier", (gpointer) &multipliers[0]);
+    g_object_set_data(G_OBJECT(self->medium_size_button), "size-multiplier", (gpointer) &multipliers[1]);
+    g_object_set_data(G_OBJECT(self->large_size_button), "size-multiplier", (gpointer) &multipliers[2]);
+    g_signal_connect(self->small_size_button, "clicked", G_CALLBACK(swash_window_size_preset_clicked), self);
+    g_signal_connect(self->medium_size_button, "clicked", G_CALLBACK(swash_window_size_preset_clicked), self);
+    g_signal_connect(self->large_size_button, "clicked", G_CALLBACK(swash_window_size_preset_clicked), self);
+    g_signal_connect(self->reset_size_button, "clicked", G_CALLBACK(swash_window_reset_size_clicked), self);
+  }
   g_signal_connect(self->blur_type_dropdown, "notify::selected", G_CALLBACK(swash_window_blur_type_changed), self);
   g_signal_connect(self->color_button, "notify::rgba", G_CALLBACK(swash_window_color_changed), self);
   g_signal_connect(self->fill_color_button, "notify::rgba", G_CALLBACK(swash_window_fill_color_changed), self);

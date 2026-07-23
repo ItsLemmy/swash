@@ -4,6 +4,37 @@
 #include "types.h"
 #include "window.h"
 
+typedef enum {
+  SWASH_SHORTCUT_OPEN,
+  SWASH_SHORTCUT_SAVE,
+  SWASH_SHORTCUT_COPY,
+  SWASH_SHORTCUT_UNDO,
+  SWASH_SHORTCUT_REDO,
+  SWASH_SHORTCUT_ZOOM_IN,
+  SWASH_SHORTCUT_ZOOM_OUT,
+  SWASH_SHORTCUT_ZOOM_FIT,
+  SWASH_SHORTCUT_ROTATE,
+  SWASH_SHORTCUT_FLIP_HORIZONTAL,
+  SWASH_SHORTCUT_FLIP_VERTICAL,
+  SWASH_SHORTCUT_PREFERENCES,
+  SWASH_SHORTCUT_QUIT,
+  SWASH_SHORTCUT_TOOL_MOVE,
+  SWASH_SHORTCUT_TOOL_BRUSH,
+  SWASH_SHORTCUT_TOOL_ARROW,
+  SWASH_SHORTCUT_TOOL_RECTANGLE,
+  SWASH_SHORTCUT_TOOL_CIRCLE,
+  SWASH_SHORTCUT_TOOL_LINE,
+  SWASH_SHORTCUT_TOOL_HIGHLIGHTER,
+  SWASH_SHORTCUT_TOOL_TEXT,
+  SWASH_SHORTCUT_TOOL_NUMBERING,
+  SWASH_SHORTCUT_TOOL_BLUR,
+  SWASH_SHORTCUT_TOOL_ERASER,
+  SWASH_SHORTCUT_TOOL_CROP,
+  SWASH_SHORTCUT_TOOL_PAN,
+  SWASH_SHORTCUT_TOOL_OCR,
+  SWASH_SHORTCUT_COUNT,
+} SwashShortcut;
+
 struct _SwashWindow {
   AdwApplicationWindow parent_instance;
 
@@ -13,6 +44,7 @@ struct _SwashWindow {
   GtkWidget *canvas_surface;
   GtkPicture *picture;
   GtkDrawingArea *drawing_area;
+  GtkWidget *active_stroke_overlay;
   GtkGesture *touch_pan_gesture;
   GtkGesture *crop_gesture;
   GtkGesture *draw_gesture;
@@ -35,6 +67,8 @@ struct _SwashWindow {
   GtkWindowControls *start_window_controls;
   GListModel *start_window_controls_children;
   GtkWidget *open_actions;
+  GtkButton *open_button;
+  GtkButton *empty_open_button;
   GtkWidget *file_group;
   GtkMenuButton *file_button;
   GtkLabel *file_label;
@@ -74,8 +108,14 @@ struct _SwashWindow {
   GtkImage *copy_default_icon;
   GtkImage *copy_success_icon;
   GtkWidget *zoom_group;
+  GtkButton *zoom_out_button;
+  GtkButton *zoom_in_button;
   GtkButton *fit_zoom_button;
   GtkWidget *settings_group;
+  GtkWidget *crop_controls;
+  GtkLabel *crop_dimensions_label;
+  GtkButton *crop_cancel_button;
+  GtkButton *crop_apply_button;
   GtkColorDialogButton *color_button;
   GtkColorDialogButton *fill_color_button;
   GtkScale *width_scale;
@@ -83,15 +123,25 @@ struct _SwashWindow {
   GtkLabel *size_button_label;
   GtkSpinButton *text_size_spin;
   GtkSpinButton *precise_size_spin;
+  GtkButton *small_size_button;
+  GtkButton *medium_size_button;
+  GtkButton *large_size_button;
+  GtkButton *reset_size_button;
   GtkDropDown *blur_type_dropdown;
   GtkCssProvider *window_css_provider;
   GtkCssProvider *widget_css_provider;
-  char *copy_shortcut_accel;
+  char *shortcut_accels[SWASH_SHORTCUT_COUNT];
 
   GFile *current_file;
   char *source_name;
   GdkTexture *texture;
   cairo_surface_t *image_surface;
+  cairo_surface_t *annotation_cache;
+  int annotation_cache_width;
+  int annotation_cache_height;
+  guint annotation_cache_image_generation;
+  guint annotation_cache_generation;
+  gboolean annotation_cache_allow_marker_overlap;
   SwashDocument *document;
   SwashStroke *current_stroke;
   double zoom;
@@ -117,6 +167,14 @@ struct _SwashWindow {
   double crop_start_y;
   double crop_end_x;
   double crop_end_y;
+  double crop_drag_x;
+  double crop_drag_y;
+  double crop_original_left;
+  double crop_original_top;
+  double crop_original_right;
+  double crop_original_bottom;
+  guint crop_drag_mode;
+  gboolean crop_selection_active;
 
   double pointer_x;
   double pointer_y;
@@ -142,18 +200,20 @@ struct _SwashWindow {
   guint touch_tap_max_points;
   gint64 touch_tap_started_at;
   gboolean esc_closes_window;
-  gboolean copy_shortcut_enabled;
+  gboolean close_after_copy;
+  gboolean close_after_save;
+  gboolean close_after_current_copy;
   GdkModifierType angle_snap_modifiers;
   gboolean allow_highlighter_overlap;
   gboolean floating_controls_blur;
   gboolean auto_copy_latest_change;
+  gboolean remember_tool_sizes;
   double window_background_opacity;
   double floating_controls_opacity;
   double tool_widths[SWASH_TOOL_MOVE + 1];
   GdkRGBA tool_colors[SWASH_TOOL_MOVE + 1];
   GdkRGBA tool_fill_colors[SWASH_TOOL_MOVE + 1];
   int blur_type;
-  SwashEraserStyle eraser_style;
   GPtrArray *ocr_lines;
   SwashOcrLine *selected_ocr_line;
   char *ocr_all_text;
@@ -168,7 +228,12 @@ void swash_window_update_history_buttons(SwashWindow *self);
 void swash_window_clear_history(SwashWindow *self);
 void swash_window_record_undo_step(SwashWindow *self);
 void swash_window_maybe_auto_copy_latest_change(SwashWindow *self);
-void swash_window_trigger_copy(SwashWindow *self);
+void swash_window_trigger_copy(SwashWindow *self,
+                                  gboolean        user_initiated);
+gboolean swash_window_shortcut_matches(SwashWindow   *self,
+                                          SwashShortcut shortcut,
+                                          guint          keyval,
+                                          GdkModifierType state);
 void swash_window_restore_strokes(SwashWindow *self,
                                      GPtrArray      *strokes);
 
@@ -204,6 +269,9 @@ void swash_window_apply_crop(SwashWindow *self,
                                 int             top,
                                 int             width,
                                 int             height);
+void swash_window_apply_pending_crop(SwashWindow *self);
+void swash_window_cancel_pending_crop(SwashWindow *self);
+void swash_window_update_crop_controls(SwashWindow *self);
 void swash_window_set_zoom_at(SwashWindow *self,
                                  double          zoom,
                                  double          viewport_x,
@@ -223,3 +291,6 @@ void swash_window_drawing_area_draw(GtkDrawingArea *area,
                                        int             width,
                                        int             height,
                                        gpointer        user_data);
+GtkWidget *swash_stroke_overlay_new(SwashWindow *self);
+void swash_window_update_active_stroke_overlay(SwashWindow *self);
+void swash_window_update_canvas_cursor(SwashWindow *self);

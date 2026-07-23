@@ -33,3 +33,5 @@ void swash_document_set_strokes(SwashDocument *document,
                                    GPtrArray        *strokes);
 void swash_document_clear_annotations(SwashDocument *document);
 guint swash_document_get_image_generation(SwashDocument *document);
+guint swash_document_get_annotations_generation(SwashDocument *document);
+void swash_document_annotations_changed(SwashDocument *document);

@@ -280,6 +280,7 @@ swash_window_update_picture_size(SwashWindow *self)
 
   gtk_widget_set_size_request(self->canvas_surface, req_width, req_height);
   swash_window_update_ocr_overlay(self);
+  swash_window_update_canvas_cursor(self);
 }
 
 void

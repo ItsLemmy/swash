@@ -91,7 +91,7 @@
                     </child>
 
                     <child>
-                      <object class="GtkButton">
+                      <object class="GtkButton" id="empty_open_button">
                         <property name="label">Open image</property>
                         <property name="action-name">win.open</property>
                         <style>
@@ -216,7 +216,7 @@
                               <class name="open-group"/>
                             </style>
                             <child>
-                              <object class="GtkButton">
+                              <object class="GtkButton" id="open_button">
                                 <property name="action-name">win.open</property>
                                 <property name="label">Open</property>
                                 <style>
@@ -697,12 +697,36 @@
                               <object class="GtkPopover">
                                 <child>
                                   <object class="GtkBox">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">8</property>
                                     <property name="margin-start">10</property>
                                     <property name="margin-end">10</property>
                                     <property name="margin-top">10</property>
                                     <property name="margin-bottom">10</property>
                                     <child>
+                                      <object class="GtkBox">
+                                        <property name="spacing">4</property>
+                                        <property name="homogeneous">True</property>
+                                        <child>
+                                          <object class="GtkButton" id="small_size_button">
+                                            <property name="label">S</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkButton" id="medium_size_button">
+                                            <property name="label">M</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkButton" id="large_size_button">
+                                            <property name="label">L</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                    <child>
                                       <object class="GtkSpinButton" id="precise_size_spin">
+                                        <property name="hexpand">True</property>
                                         <property name="valign">center</property>
                                         <property name="adjustment">
                                           <object class="GtkAdjustment">
@@ -712,6 +736,11 @@
                                             <property name="step-increment">1.0</property>
                                           </object>
                                         </property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="reset_size_button">
+                                        <property name="label">Reset to default</property>
                                       </object>
                                     </child>
                                   </object>
@@ -731,6 +760,42 @@
                                 <property name="step-increment">1.0</property>
                               </object>
                             </property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="GtkBox" id="crop_controls">
+                        <property name="visible">False</property>
+                        <property name="spacing">4</property>
+                        <property name="valign">fill</property>
+                        <style>
+                          <class name="overlay-pill"/>
+                          <class name="settings-group"/>
+                        </style>
+                        <child>
+                          <object class="GtkLabel" id="crop_dimensions_label">
+                            <property name="label">0 × 0 px</property>
+                            <property name="margin-start">8</property>
+                            <property name="margin-end">4</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="crop_cancel_button">
+                            <property name="label">Cancel</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="crop_apply_button">
+                            <property name="label">Apply</property>
+                            <property name="sensitive">False</property>
+                            <style>
+                              <class name="suggested-action"/>
+                            </style>
                           </object>
                         </child>
                       </object>
@@ -775,7 +840,7 @@
                         </style>
 
                         <child>
-                          <object class="GtkButton">
+                          <object class="GtkButton" id="zoom_out_button">
                             <property name="action-name">win.zoom-out</property>
                             <property name="tooltip-text">Zoom out</property>
                             <property name="icon-name">swash-zoom-out-symbolic</property>
@@ -792,7 +857,7 @@
                         </child>
 
                         <child>
-                          <object class="GtkButton">
+                          <object class="GtkButton" id="zoom_in_button">
                             <property name="action-name">win.zoom-in</property>
                             <property name="tooltip-text">Zoom in</property>
                             <property name="icon-name">swash-zoom-in-symbolic</property>

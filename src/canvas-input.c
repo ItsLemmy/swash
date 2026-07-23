@@ -1,5 +1,6 @@
 #include "window-private.h"
 
+#include "editor-utils.h"
 #include "stroke.h"
 
 #include <math.h>
@@ -8,6 +9,12 @@
 #define SWASH_MAX_ZOOM 8.00
 #define SWASH_TOUCH_TAP_MAX_DISTANCE 24.0
 #define SWASH_TOUCH_TAP_MAX_DURATION_US (700 * G_TIME_SPAN_MILLISECOND)
+#define SWASH_CROP_DRAG_LEFT (1u << 0)
+#define SWASH_CROP_DRAG_RIGHT (1u << 1)
+#define SWASH_CROP_DRAG_TOP (1u << 2)
+#define SWASH_CROP_DRAG_BOTTOM (1u << 3)
+#define SWASH_CROP_DRAG_MOVE (1u << 4)
+#define SWASH_CROP_DRAG_NEW (1u << 5)
 
 typedef struct {
   double x;
@@ -16,6 +23,45 @@ typedef struct {
 
 static void swash_window_text_editing_cancel(SwashWindow *self);
 void swash_window_text_editing_commit(SwashWindow *self);
+
+static gboolean
+swash_window_add_sampled_point(SwashWindow *self,
+                               SwashStroke *stroke,
+                               double       x,
+                               double       y)
+{
+  const guint len = stroke->points->len;
+  const double zoom = MAX(swash_window_get_effective_zoom(self), SWASH_MIN_ZOOM);
+  const double minimum_distance = 2.5 / zoom;
+  const double simplify_tolerance = 0.75 / zoom;
+  const SwashPoint *last;
+
+  if (len == 0) {
+    swash_stroke_add_point(stroke, x, y);
+    return TRUE;
+  }
+
+  last = &g_array_index(stroke->points, SwashPoint, len - 1);
+  {
+    const SwashPoint next = { x, y };
+
+    if (!swash_point_is_far_enough(last, &next, minimum_distance))
+      return FALSE;
+  }
+
+  if (len >= 2) {
+    const SwashPoint *anchor = &g_array_index(stroke->points, SwashPoint, len - 2);
+    const SwashPoint next = { x, y };
+
+    if (swash_point_can_simplify(anchor, last, &next, simplify_tolerance)) {
+      g_array_index(stroke->points, SwashPoint, len - 1) = next;
+      return TRUE;
+    }
+  }
+
+  swash_stroke_add_point(stroke, x, y);
+  return TRUE;
+}
 
 static void
 swash_window_get_viewport_size(SwashWindow *self,
@@ -36,26 +82,6 @@ swash_window_get_viewport_size(SwashWindow *self,
 }
 
 static gboolean
-swash_window_parse_shortcut_match(const char      *accelerator,
-                                     guint            keyval,
-                                     GdkModifierType  state)
-{
-  guint accelerator_keyval = 0;
-  GdkModifierType accelerator_modifiers = 0;
-
-  if (accelerator == NULL || *accelerator == '\0')
-    return FALSE;
-
-  gtk_accelerator_parse(accelerator, &accelerator_keyval, &accelerator_modifiers);
-  if (accelerator_keyval == 0)
-    return FALSE;
-
-  return gdk_keyval_to_lower(accelerator_keyval) == gdk_keyval_to_lower(keyval)
-      && (accelerator_modifiers & gtk_accelerator_get_default_mod_mask())
-      == (state & gtk_accelerator_get_default_mod_mask());
-}
-
-static gboolean
 swash_window_cancel_current_interaction(SwashWindow *self)
 {
   GPtrArray *strokes;
@@ -69,16 +95,13 @@ swash_window_cancel_current_interaction(SwashWindow *self)
     return FALSE;
 
   self->drawing = FALSE;
+  swash_window_update_active_stroke_overlay(self);
 
   if (self->active_tool == SWASH_TOOL_PAN)
     return TRUE;
 
   if (self->active_tool == SWASH_TOOL_CROP) {
-    self->crop_start_x = 0.0;
-    self->crop_start_y = 0.0;
-    self->crop_end_x = 0.0;
-    self->crop_end_y = 0.0;
-    gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+    swash_window_cancel_pending_crop(self);
     return TRUE;
   }
 
@@ -299,7 +322,7 @@ swash_window_begin_draw_stroke(SwashWindow *self)
 
   g_ptr_array_add(swash_window_strokes(self), self->current_stroke);
   swash_window_reset_save_button(self);
-  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+  swash_window_update_active_stroke_overlay(self);
 }
 
 static gboolean
@@ -411,77 +434,61 @@ swash_window_global_key_pressed(GtkEventControllerKey *controller,
       return TRUE;
     }
 
+    if (self->active_tool == SWASH_TOOL_CROP && self->crop_selection_active) {
+      swash_window_cancel_pending_crop(self);
+      return TRUE;
+    }
+
     if (self->esc_closes_window) {
       gtk_widget_activate_action(GTK_WIDGET(self), "win.close-window", NULL);
       return TRUE;
     }
   }
 
-  if (self->copy_shortcut_enabled
-      && swash_window_parse_shortcut_match(self->copy_shortcut_accel, keyval, state)) {
+  if ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter)
+      && (state & gtk_accelerator_get_default_mod_mask()) == 0
+      && self->active_tool == SWASH_TOOL_CROP
+      && self->crop_selection_active) {
+    swash_window_apply_pending_crop(self);
+    return TRUE;
+  }
+
+  if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_COPY, keyval, state)) {
     gtk_widget_activate_action(GTK_WIDGET(self), "win.copy-buffer", NULL);
     return TRUE;
   }
 
-  if ((state & gtk_accelerator_get_default_mod_mask()) == 0 && !self->drawing) {
+  if (!self->drawing) {
     GtkToggleButton *target = NULL;
 
-    switch (keyval) {
-    case GDK_KEY_b:
-    case GDK_KEY_B:
+    if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_BRUSH, keyval, state))
       target = self->brush_tool_button;
-      break;
-    case GDK_KEY_a:
-    case GDK_KEY_A:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_ARROW, keyval, state))
       target = self->arrow_tool_button;
-      break;
-    case GDK_KEY_s:
-    case GDK_KEY_S:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_RECTANGLE, keyval, state))
       target = self->rectangle_tool_button;
-      break;
-    case GDK_KEY_o:
-    case GDK_KEY_O:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_CIRCLE, keyval, state))
       target = self->circle_tool_button;
-      break;
-    case GDK_KEY_l:
-    case GDK_KEY_L:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_LINE, keyval, state))
       target = self->line_tool_button;
-      break;
-    case GDK_KEY_h:
-    case GDK_KEY_H:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_HIGHLIGHTER, keyval, state))
       target = self->highlighter_tool_button;
-      break;
-    case GDK_KEY_t:
-    case GDK_KEY_T:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_TEXT, keyval, state))
       target = self->text_tool_button;
-      break;
-    case GDK_KEY_u:
-    case GDK_KEY_U:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_NUMBERING, keyval, state))
+      target = self->numbering_tool_button;
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_BLUR, keyval, state))
       target = self->blur_tool_button;
-      break;
-    case GDK_KEY_e:
-    case GDK_KEY_E:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_ERASER, keyval, state))
       target = self->eraser_tool_button;
-      break;
-    case GDK_KEY_c:
-    case GDK_KEY_C:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_CROP, keyval, state))
       target = self->crop_tool_button;
-      break;
-    case GDK_KEY_p:
-    case GDK_KEY_P:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_PAN, keyval, state))
       target = self->pan_tool_button;
-      break;
-    case GDK_KEY_r:
-    case GDK_KEY_R:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_OCR, keyval, state))
       target = self->ocr_tool_button;
-      break;
-    case GDK_KEY_m:
-    case GDK_KEY_M:
+    else if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_TOOL_MOVE, keyval, state))
       target = self->move_tool_button;
-      break;
-    default:
-      break;
-    }
 
     if (target != NULL && self->texture != NULL) {
       gtk_toggle_button_set_active(target, TRUE);
@@ -592,6 +599,7 @@ swash_window_erase_strokes(SwashWindow *self,
 
   if (removed_stroke) {
     swash_strokes_renumber(strokes);
+    swash_document_annotations_changed(self->document);
     swash_window_reset_save_button(self);
   }
 
@@ -779,6 +787,108 @@ swash_window_pan_end(GtkGestureDrag *gesture,
 }
 
 static void
+swash_window_normalize_crop_selection(SwashWindow *self)
+{
+  swash_crop_rect_normalize(&self->crop_start_x,
+                            &self->crop_start_y,
+                            &self->crop_end_x,
+                            &self->crop_end_y);
+}
+
+void
+swash_window_update_crop_controls(SwashWindow *self)
+{
+  const gboolean visible = self->texture != NULL
+                        && self->active_tool == SWASH_TOOL_CROP;
+  int width = 0;
+  int height = 0;
+  g_autofree char *dimensions = NULL;
+
+  if (self->crop_selection_active)
+    swash_crop_rect_dimensions(self->crop_start_x,
+                               self->crop_start_y,
+                               self->crop_end_x,
+                               self->crop_end_y,
+                               &width,
+                               &height);
+  dimensions = g_strdup_printf("%d × %d px", width, height);
+  gtk_widget_set_visible(self->crop_controls, visible);
+  gtk_label_set_text(self->crop_dimensions_label, dimensions);
+  gtk_widget_set_sensitive(GTK_WIDGET(self->crop_apply_button),
+                           self->crop_selection_active && width > 0 && height > 0);
+}
+
+void
+swash_window_cancel_pending_crop(SwashWindow *self)
+{
+  self->drawing = FALSE;
+  self->crop_selection_active = FALSE;
+  self->crop_drag_mode = 0;
+  self->crop_start_x = 0.0;
+  self->crop_start_y = 0.0;
+  self->crop_end_x = 0.0;
+  self->crop_end_y = 0.0;
+  swash_window_update_crop_controls(self);
+  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+}
+
+void
+swash_window_apply_pending_crop(SwashWindow *self)
+{
+  int left;
+  int top;
+  int right;
+  int bottom;
+
+  if (!self->crop_selection_active || self->texture == NULL)
+    return;
+
+  swash_window_normalize_crop_selection(self);
+  left = CLAMP((int) floor(self->crop_start_x), 0, gdk_texture_get_width(self->texture) - 1);
+  top = CLAMP((int) floor(self->crop_start_y), 0, gdk_texture_get_height(self->texture) - 1);
+  right = CLAMP((int) ceil(self->crop_end_x), left + 1, gdk_texture_get_width(self->texture));
+  bottom = CLAMP((int) ceil(self->crop_end_y), top + 1, gdk_texture_get_height(self->texture));
+  swash_window_cancel_pending_crop(self);
+  swash_window_apply_crop(self, left, top, right - left, bottom - top);
+  swash_window_update_crop_controls(self);
+}
+
+static guint
+swash_window_crop_hit_test(SwashWindow *self,
+                              double          x,
+                              double          y)
+{
+  const double tolerance = 10.0 / MAX(swash_window_get_effective_zoom(self), 0.01);
+  guint mode = 0;
+
+  if (!self->crop_selection_active)
+    return SWASH_CROP_DRAG_NEW;
+
+  if (fabs(x - self->crop_start_x) <= tolerance)
+    mode |= SWASH_CROP_DRAG_LEFT;
+  else if (fabs(x - self->crop_end_x) <= tolerance)
+    mode |= SWASH_CROP_DRAG_RIGHT;
+
+  if (fabs(y - self->crop_start_y) <= tolerance)
+    mode |= SWASH_CROP_DRAG_TOP;
+  else if (fabs(y - self->crop_end_y) <= tolerance)
+    mode |= SWASH_CROP_DRAG_BOTTOM;
+
+  if (mode != 0
+      && x >= self->crop_start_x - tolerance
+      && x <= self->crop_end_x + tolerance
+      && y >= self->crop_start_y - tolerance
+      && y <= self->crop_end_y + tolerance)
+    return mode;
+
+  if (x >= self->crop_start_x && x <= self->crop_end_x
+      && y >= self->crop_start_y && y <= self->crop_end_y)
+    return SWASH_CROP_DRAG_MOVE;
+
+  return SWASH_CROP_DRAG_NEW;
+}
+
+static void
 swash_window_crop_begin(GtkGestureDrag *gesture,
                            double          start_x,
                            double          start_y,
@@ -790,19 +900,32 @@ swash_window_crop_begin(GtkGestureDrag *gesture,
     return;
 
   if (!swash_window_get_image_point(self,
-                                       start_x,
-                                       start_y,
-                                       FALSE,
-                                       &self->crop_start_x,
-                                       &self->crop_start_y))
+                                    start_x,
+                                    start_y,
+                                    FALSE,
+                                    &self->crop_drag_x,
+                                    &self->crop_drag_y))
     return;
 
   if (!swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture)))
     gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
   self->drawing = TRUE;
   self->interaction_has_undo_step = FALSE;
-  self->crop_end_x = self->crop_start_x;
-  self->crop_end_y = self->crop_start_y;
+  self->crop_drag_mode = swash_window_crop_hit_test(self,
+                                                   self->crop_drag_x,
+                                                   self->crop_drag_y);
+  self->crop_original_left = self->crop_start_x;
+  self->crop_original_top = self->crop_start_y;
+  self->crop_original_right = self->crop_end_x;
+  self->crop_original_bottom = self->crop_end_y;
+  if (self->crop_drag_mode == SWASH_CROP_DRAG_NEW) {
+    self->crop_selection_active = TRUE;
+    self->crop_start_x = self->crop_drag_x;
+    self->crop_start_y = self->crop_drag_y;
+    self->crop_end_x = self->crop_drag_x;
+    self->crop_end_y = self->crop_drag_y;
+  }
+  swash_window_update_crop_controls(self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
@@ -813,21 +936,58 @@ swash_window_crop_update(GtkGestureDrag *gesture,
                             gpointer        user_data)
 {
   SwashWindow *self = SWASH_WINDOW(user_data);
-  double start_x;
-  double start_y;
+  double current_x;
+  double current_y;
+  int image_width;
+  int image_height;
 
   if (self->texture == NULL || self->active_tool != SWASH_TOOL_CROP || !self->drawing)
     return;
 
+  image_width = gdk_texture_get_width(self->texture);
+  image_height = gdk_texture_get_height(self->texture);
+
+  double start_x;
+  double start_y;
+
   gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y);
   if (!swash_window_get_image_point(self,
-                                       start_x + offset_x,
-                                       start_y + offset_y,
-                                       TRUE,
-                                       &self->crop_end_x,
-                                       &self->crop_end_y))
+                                    start_x + offset_x,
+                                    start_y + offset_y,
+                                    TRUE,
+                                    &current_x,
+                                    &current_y))
     return;
 
+  if (self->crop_drag_mode == SWASH_CROP_DRAG_NEW) {
+    self->crop_end_x = current_x;
+    self->crop_end_y = current_y;
+  } else if (self->crop_drag_mode == SWASH_CROP_DRAG_MOVE) {
+    const double width = self->crop_original_right - self->crop_original_left;
+    const double height = self->crop_original_bottom - self->crop_original_top;
+    const double left = CLAMP(self->crop_original_left + current_x - self->crop_drag_x,
+                              0.0,
+                              MAX(0.0, image_width - width));
+    const double top = CLAMP(self->crop_original_top + current_y - self->crop_drag_y,
+                             0.0,
+                             MAX(0.0, image_height - height));
+
+    self->crop_start_x = left;
+    self->crop_start_y = top;
+    self->crop_end_x = left + width;
+    self->crop_end_y = top + height;
+  } else {
+    if (self->crop_drag_mode & SWASH_CROP_DRAG_LEFT)
+      self->crop_start_x = MIN(current_x, self->crop_original_right - 1.0);
+    if (self->crop_drag_mode & SWASH_CROP_DRAG_RIGHT)
+      self->crop_end_x = MAX(current_x, self->crop_original_left + 1.0);
+    if (self->crop_drag_mode & SWASH_CROP_DRAG_TOP)
+      self->crop_start_y = MIN(current_y, self->crop_original_bottom - 1.0);
+    if (self->crop_drag_mode & SWASH_CROP_DRAG_BOTTOM)
+      self->crop_end_y = MAX(current_y, self->crop_original_top + 1.0);
+  }
+
+  swash_window_update_crop_controls(self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
@@ -839,6 +999,7 @@ swash_window_crop_end(GtkGestureDrag *gesture,
 {
   SwashWindow *self = SWASH_WINDOW(user_data);
 
+  (void) gesture;
   (void) offset_x;
   (void) offset_y;
 
@@ -849,23 +1010,14 @@ swash_window_crop_end(GtkGestureDrag *gesture,
 
   self->drawing = FALSE;
 
-  if (gtk_gesture_drag_get_start_point(gesture, NULL, NULL)) {
-    const int image_width = gdk_texture_get_width(self->texture);
-    const int image_height = gdk_texture_get_height(self->texture);
-    const int left = CLAMP((int) floor(MIN(self->crop_start_x, self->crop_end_x)), 0, MAX(0, image_width - 1));
-    const int top = CLAMP((int) floor(MIN(self->crop_start_y, self->crop_end_y)), 0, MAX(0, image_height - 1));
-    const int right = CLAMP((int) ceil(MAX(self->crop_start_x, self->crop_end_x)), 1, image_width);
-    const int bottom = CLAMP((int) ceil(MAX(self->crop_start_y, self->crop_end_y)), 1, image_height);
-
-    if (right > left && bottom > top)
-      swash_window_apply_crop(self, left, top, right - left, bottom - top);
-  }
-
-  self->crop_start_x = 0.0;
-  self->crop_start_y = 0.0;
-  self->crop_end_x = 0.0;
-  self->crop_end_y = 0.0;
+  swash_window_normalize_crop_selection(self);
+  self->crop_selection_active = self->crop_end_x - self->crop_start_x >= 1.0
+                             && self->crop_end_y - self->crop_start_y >= 1.0;
+  if (!self->crop_selection_active)
+    swash_window_cancel_pending_crop(self);
+  self->crop_drag_mode = 0;
   self->interaction_has_undo_step = FALSE;
+  swash_window_update_crop_controls(self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
@@ -901,6 +1053,7 @@ swash_window_text_editing_commit(SwashWindow *self)
     swash_window_refresh_document_state(self);
     swash_window_update_history_buttons(self);
   } else {
+    swash_document_annotations_changed(self->document);
     swash_window_maybe_auto_copy_latest_change(self);
     self->current_stroke = NULL;
   }
@@ -1125,6 +1278,7 @@ swash_window_draw_update(GtkGestureDrag *gesture,
       const double dy = image_y - self->move_start_y;
 
       swash_stroke_offset(self->selected_stroke, dx, dy);
+      swash_document_annotations_changed(self->document);
       self->move_start_x = image_x;
       self->move_start_y = image_y;
       gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
@@ -1148,12 +1302,17 @@ swash_window_draw_update(GtkGestureDrag *gesture,
 
     swash_window_maybe_snap_shape_endpoint(gesture, self, &image_x, &image_y);
 
-    if (swash_tool_is_shape(self->active_tool))
+    if (swash_tool_is_shape(self->active_tool)) {
       swash_stroke_set_last_point(self->current_stroke, image_x, image_y);
-    else
-      swash_stroke_add_point(self->current_stroke, image_x, image_y);
+    } else {
+      if (!swash_window_add_sampled_point(self, self->current_stroke, image_x, image_y)) {
+        self->last_draw_x = image_x;
+        self->last_draw_y = image_y;
+        return;
+      }
+    }
 
-    gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
+    swash_window_update_active_stroke_overlay(self);
   }
 
   self->last_draw_x = image_x;
@@ -1175,6 +1334,7 @@ swash_window_draw_end(GtkGestureDrag *gesture,
   double image_y;
 
   self->drawing = FALSE;
+  swash_window_update_active_stroke_overlay(self);
 
   if (swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture))
       && sequence != NULL
@@ -1252,6 +1412,8 @@ swash_window_draw_end(GtkGestureDrag *gesture,
     self->text_cursor_blink_id = g_timeout_add(530, swash_window_text_cursor_blink, self);
   }
 
+  if (self->active_tool != SWASH_TOOL_TEXT)
+    swash_document_annotations_changed(self->document);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
   if (self->active_tool != SWASH_TOOL_TEXT)
     swash_window_maybe_auto_copy_latest_change(self);
@@ -1261,6 +1423,7 @@ done:
   if (sequence != NULL && sequence == self->cancelled_touch_draw_sequence)
     self->cancelled_touch_draw_sequence = NULL;
   self->current_stroke = (self->active_tool == SWASH_TOOL_TEXT) ? self->current_stroke : NULL;
+  swash_window_update_active_stroke_overlay(self);
 }
 
 static gboolean
@@ -1394,7 +1557,6 @@ swash_window_pointer_enter(GtkEventControllerMotion *controller,
   self->pointer_in = TRUE;
   self->pointer_widget_x = x;
   self->pointer_widget_y = y;
-  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 static void
@@ -1406,7 +1568,6 @@ swash_window_pointer_leave(GtkEventControllerMotion *controller,
   (void) controller;
 
   self->pointer_in = FALSE;
-  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 static void
@@ -1423,9 +1584,6 @@ swash_window_pointer_motion(GtkEventControllerMotion *controller,
   self->pointer_widget_y = y;
   if (!swash_window_get_image_point(self, x, y, TRUE, &self->pointer_x, &self->pointer_y))
     return;
-
-  if (self->pointer_in)
-    gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 void

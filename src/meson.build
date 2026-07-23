@@ -9,6 +9,8 @@ swash_sources = files(
   'canvas-state.c',
   'document.c',
   'document.h',
+  'editor-utils.c',
+  'editor-utils.h',
   'export.c',
   'export.h',
   'ocr.c',
@@ -36,3 +38,15 @@ executable(
   dependencies: [gtk_dep, adw_dep, m_dep],
   install: true,
 )
+
+editor_utils_test = executable(
+  'test-editor-utils',
+  files(
+    'test-editor-utils.c',
+    'editor-utils.c',
+    'stroke.c',
+  ),
+  dependencies: [gtk_dep, adw_dep, m_dep],
+)
+
+test('editor-utils', editor_utils_test)

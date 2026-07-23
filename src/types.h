@@ -20,12 +20,6 @@ typedef enum {
   SWASH_TOOL_MOVE,
 } SwashTool;
 
-typedef enum {
-  SWASH_ERASER_STYLE_DUAL_RING,
-  SWASH_ERASER_STYLE_DASHED_RING,
-  SWASH_ERASER_STYLE_PATTERN,
-} SwashEraserStyle;
-
 //this is so annoying
 typedef enum {
   SWASH_WINDOW_BACKGROUND_FOLLOW_SYSTEM,

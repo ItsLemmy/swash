@@ -3,6 +3,7 @@
 #include "swash-config.h"
 
 #include "export.h"
+#include "editor-utils.h"
 #include "ocr.h"
 #include "render.h"
 #include "stroke.h"
@@ -34,10 +35,12 @@ static void swash_window_copy_export_ready(GObject      *source_object,
 static gboolean swash_window_parse_accelerator(const char       *accelerator,
                                                   guint            *keyval,
                                                   GdkModifierType  *modifiers);
-static void swash_window_apply_copy_shortcut(SwashWindow *self,
-                                                const char     *accelerator);
 static void swash_window_update_shortcut_label(GtkShortcutLabel *label,
                                                   const char       *accelerator);
+static void swash_window_apply_shortcuts(SwashWindow *self);
+static void swash_window_update_shortcut_tooltips(SwashWindow *self);
+static GtkToggleButton *swash_window_button_for_tool(SwashWindow *self,
+                                                        SwashTool    tool);
 static const char *swash_window_angle_snap_modifier_label(GdkModifierType modifiers);
 static void swash_window_highlighter_overlap_changed(AdwSwitchRow   *row,
                                                         GParamSpec     *pspec,
@@ -48,6 +51,44 @@ static void swash_window_update_widget_appearance(SwashWindow *self);
 static void swash_window_save_preferences(SwashWindow *self);
 
 #define SWASH_STATE_GROUP "state"
+
+typedef struct {
+  const char *key;
+  const char *label;
+  const char *action;
+  const char *default_accel;
+  SwashTool tool;
+} SwashShortcutInfo;
+
+static const SwashShortcutInfo swash_shortcut_info[SWASH_SHORTCUT_COUNT] = {
+  [SWASH_SHORTCUT_OPEN] = {"open", "Open", "win.open", "<Primary>o", -1},
+  [SWASH_SHORTCUT_SAVE] = {"save", "Save", "win.save", "<Primary>s", -1},
+  [SWASH_SHORTCUT_COPY] = {"copy", "Copy", "win.copy-buffer", "<Primary>c", -1},
+  [SWASH_SHORTCUT_UNDO] = {"undo", "Undo", "win.undo", "<Primary>z", -1},
+  [SWASH_SHORTCUT_REDO] = {"redo", "Redo", "win.redo", "<Primary><Shift>z", -1},
+  [SWASH_SHORTCUT_ZOOM_IN] = {"zoom_in", "Zoom in", "win.zoom-in", "<Primary>plus", -1},
+  [SWASH_SHORTCUT_ZOOM_OUT] = {"zoom_out", "Zoom out", "win.zoom-out", "<Primary>minus", -1},
+  [SWASH_SHORTCUT_ZOOM_FIT] = {"zoom_fit", "Fit image to window", "win.zoom-fit", "<Primary>0", -1},
+  [SWASH_SHORTCUT_ROTATE] = {"rotate", "Rotate counter clockwise", "win.rotate-counter-clockwise", "", -1},
+  [SWASH_SHORTCUT_FLIP_HORIZONTAL] = {"flip_horizontal", "Flip horizontal", "win.flip-horizontal", "", -1},
+  [SWASH_SHORTCUT_FLIP_VERTICAL] = {"flip_vertical", "Flip vertical", "win.flip-vertical", "", -1},
+  [SWASH_SHORTCUT_PREFERENCES] = {"preferences", "Preferences", "win.preferences", "<Primary>comma", -1},
+  [SWASH_SHORTCUT_QUIT] = {"quit", "Quit", "app.quit", "<Primary>q", -1},
+  [SWASH_SHORTCUT_TOOL_MOVE] = {"tool_move", "Move", NULL, "m", SWASH_TOOL_MOVE},
+  [SWASH_SHORTCUT_TOOL_BRUSH] = {"tool_brush", "Brush", NULL, "b", SWASH_TOOL_BRUSH},
+  [SWASH_SHORTCUT_TOOL_ARROW] = {"tool_arrow", "Arrow", NULL, "a", SWASH_TOOL_ARROW},
+  [SWASH_SHORTCUT_TOOL_RECTANGLE] = {"tool_rectangle", "Rectangle", NULL, "s", SWASH_TOOL_RECTANGLE},
+  [SWASH_SHORTCUT_TOOL_CIRCLE] = {"tool_circle", "Circle", NULL, "o", SWASH_TOOL_CIRCLE},
+  [SWASH_SHORTCUT_TOOL_LINE] = {"tool_line", "Line", NULL, "l", SWASH_TOOL_LINE},
+  [SWASH_SHORTCUT_TOOL_HIGHLIGHTER] = {"tool_highlighter", "Highlighter", NULL, "h", SWASH_TOOL_MARKER},
+  [SWASH_SHORTCUT_TOOL_TEXT] = {"tool_text", "Text", NULL, "t", SWASH_TOOL_TEXT},
+  [SWASH_SHORTCUT_TOOL_NUMBERING] = {"tool_numbering", "Numbering", NULL, "n", SWASH_TOOL_NUMBERING},
+  [SWASH_SHORTCUT_TOOL_BLUR] = {"tool_blur", "Blur", NULL, "u", SWASH_TOOL_BLUR},
+  [SWASH_SHORTCUT_TOOL_ERASER] = {"tool_eraser", "Eraser", NULL, "e", SWASH_TOOL_ERASER},
+  [SWASH_SHORTCUT_TOOL_CROP] = {"tool_crop", "Crop", NULL, "c", SWASH_TOOL_CROP},
+  [SWASH_SHORTCUT_TOOL_PAN] = {"tool_pan", "Pan", NULL, "p", SWASH_TOOL_PAN},
+  [SWASH_SHORTCUT_TOOL_OCR] = {"tool_ocr", "Recognize text", NULL, "r", SWASH_TOOL_OCR},
+};
 
 static const char *
 swash_tool_key_name(SwashTool tool)
@@ -154,19 +195,102 @@ swash_window_parse_accelerator(const char      *accelerator,
 }
 
 static void
-swash_window_apply_copy_shortcut(SwashWindow *self,
-                                    const char     *accelerator)
-{
-  g_clear_pointer(&self->copy_shortcut_accel, g_free);
-  self->copy_shortcut_accel = g_strdup(accelerator);
-}
-
-static void
 swash_window_update_shortcut_label(GtkShortcutLabel *label,
                                       const char       *accelerator)
 {
   gtk_shortcut_label_set_accelerator(label,
                                      accelerator != NULL ? accelerator : "");
+}
+
+static void
+swash_window_apply_shortcuts(SwashWindow *self)
+{
+  GtkApplication *application = gtk_window_get_application(GTK_WINDOW(self));
+
+  if (application == NULL)
+    return;
+
+  for (int i = 0; i < SWASH_SHORTCUT_COUNT; i++) {
+    const char *accelerators[2] = {NULL, NULL};
+
+    if (swash_shortcut_info[i].action == NULL || i == SWASH_SHORTCUT_COPY)
+      continue;
+
+    if (self->shortcut_accels[i] != NULL && *self->shortcut_accels[i] != '\0')
+      accelerators[0] = self->shortcut_accels[i];
+
+    gtk_application_set_accels_for_action(application,
+                                          swash_shortcut_info[i].action,
+                                          accelerators);
+  }
+}
+
+static void
+swash_window_set_shortcut_tooltip(GtkWidget     *widget,
+                                     SwashWindow   *self,
+                                     SwashShortcut shortcut)
+{
+  g_autofree char *accelerator_label = NULL;
+  g_autofree char *tooltip = NULL;
+  guint keyval;
+  GdkModifierType modifiers;
+
+  if (widget == NULL)
+    return;
+
+  if (swash_window_parse_accelerator(self->shortcut_accels[shortcut],
+                                     &keyval,
+                                     &modifiers))
+    accelerator_label = gtk_accelerator_get_label(keyval, modifiers);
+
+  tooltip = accelerator_label != NULL && *accelerator_label != '\0'
+          ? g_strdup_printf("%s (%s)", swash_shortcut_info[shortcut].label, accelerator_label)
+          : g_strdup(swash_shortcut_info[shortcut].label);
+  gtk_widget_set_tooltip_text(widget, tooltip);
+}
+
+static void
+swash_window_update_shortcut_tooltips(SwashWindow *self)
+{
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->undo_button), self, SWASH_SHORTCUT_UNDO);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->redo_button), self, SWASH_SHORTCUT_REDO);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->open_button), self, SWASH_SHORTCUT_OPEN);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->empty_open_button), self, SWASH_SHORTCUT_OPEN);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->save_button), self, SWASH_SHORTCUT_SAVE);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->copy_button), self, SWASH_SHORTCUT_COPY);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->rotate_counter_clockwise_button), self, SWASH_SHORTCUT_ROTATE);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->flip_horizontal_button), self, SWASH_SHORTCUT_FLIP_HORIZONTAL);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->flip_vertical_button), self, SWASH_SHORTCUT_FLIP_VERTICAL);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->fit_zoom_button), self, SWASH_SHORTCUT_ZOOM_FIT);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->zoom_in_button), self, SWASH_SHORTCUT_ZOOM_IN);
+  swash_window_set_shortcut_tooltip(GTK_WIDGET(self->zoom_out_button), self, SWASH_SHORTCUT_ZOOM_OUT);
+
+  for (int i = SWASH_SHORTCUT_TOOL_MOVE; i < SWASH_SHORTCUT_COUNT; i++)
+    swash_window_set_shortcut_tooltip(GTK_WIDGET(swash_window_button_for_tool(self,
+                                                                              swash_shortcut_info[i].tool)),
+                                     self,
+                                     i);
+}
+
+gboolean
+swash_window_shortcut_matches(SwashWindow   *self,
+                                 SwashShortcut shortcut,
+                                 guint          keyval,
+                                 GdkModifierType state)
+{
+  guint accelerator_keyval = 0;
+  GdkModifierType accelerator_modifiers = 0;
+
+  g_return_val_if_fail(shortcut < SWASH_SHORTCUT_COUNT, FALSE);
+
+  if (!swash_window_parse_accelerator(self->shortcut_accels[shortcut],
+                                     &accelerator_keyval,
+                                     &accelerator_modifiers))
+    return FALSE;
+
+  return accelerator_keyval == gdk_keyval_to_lower(keyval)
+      && accelerator_modifiers
+      == (state & gtk_accelerator_get_default_mod_mask());
 }
 
 static const char *
@@ -199,17 +323,6 @@ swash_window_load_preferences(SwashWindow *self)
     if (!g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
       g_warning("Failed to load preferences from %s: %s", path, error->message);
     return;
-  }
-
-  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "eraser_style", NULL)) {
-    const int eraser_style = g_key_file_get_integer(key_file,
-                                                    SWASH_SETTINGS_GROUP,
-                                                    "eraser_style",
-                                                    NULL);
-
-    if (eraser_style >= SWASH_ERASER_STYLE_DUAL_RING
-        && eraser_style <= SWASH_ERASER_STYLE_PATTERN)
-      self->eraser_style = eraser_style;
   }
 
   if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "window_background_mode", NULL)) {
@@ -265,11 +378,17 @@ swash_window_load_preferences(SwashWindow *self)
                                                      "esc_closes_window",
                                                      NULL);
 
-  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "copy_shortcut_enabled", NULL))
-    self->copy_shortcut_enabled = g_key_file_get_boolean(key_file,
-                                                         SWASH_SETTINGS_GROUP,
-                                                         "copy_shortcut_enabled",
-                                                         NULL);
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "close_after_copy", NULL))
+    self->close_after_copy = g_key_file_get_boolean(key_file,
+                                                    SWASH_SETTINGS_GROUP,
+                                                    "close_after_copy",
+                                                    NULL);
+
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "close_after_save", NULL))
+    self->close_after_save = g_key_file_get_boolean(key_file,
+                                                    SWASH_SETTINGS_GROUP,
+                                                    "close_after_save",
+                                                    NULL);
 
   if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "auto_copy_latest_change", NULL))
     self->auto_copy_latest_change = g_key_file_get_boolean(key_file,
@@ -277,20 +396,56 @@ swash_window_load_preferences(SwashWindow *self)
                                                            "auto_copy_latest_change",
                                                            NULL);
 
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "remember_tool_sizes", NULL))
+    self->remember_tool_sizes = g_key_file_get_boolean(key_file,
+                                                       SWASH_SETTINGS_GROUP,
+                                                       "remember_tool_sizes",
+                                                       NULL);
+
   if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "allow_highlighter_overlap", NULL))
     self->allow_highlighter_overlap = g_key_file_get_boolean(key_file,
                                                              SWASH_SETTINGS_GROUP,
                                                              "allow_highlighter_overlap",
                                                              NULL);
 
-  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "copy_shortcut", NULL)) {
-    g_autofree char *accelerator = g_key_file_get_string(key_file,
-                                                         SWASH_SETTINGS_GROUP,
-                                                         "copy_shortcut",
-                                                         NULL);
+  for (int i = 0; i < SWASH_SHORTCUT_COUNT; i++) {
+    g_autofree char *key = g_strdup_printf("shortcut_%s", swash_shortcut_info[i].key);
 
-    if (swash_window_parse_accelerator(accelerator, NULL, NULL))
-      swash_window_apply_copy_shortcut(self, accelerator);
+    if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, key, NULL)) {
+      g_autofree char *accelerator = g_key_file_get_string(key_file,
+                                                           SWASH_SETTINGS_GROUP,
+                                                           key,
+                                                           NULL);
+
+      if (*accelerator == '\0' || swash_window_parse_accelerator(accelerator, NULL, NULL)) {
+        g_free(self->shortcut_accels[i]);
+        self->shortcut_accels[i] = g_strdup(accelerator);
+      }
+    }
+  }
+
+  if (!g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "shortcut_copy", NULL)) {
+    const gboolean legacy_enabled =
+      !g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "copy_shortcut_enabled", NULL)
+      || g_key_file_get_boolean(key_file,
+                                SWASH_SETTINGS_GROUP,
+                                "copy_shortcut_enabled",
+                                NULL);
+
+    if (!legacy_enabled) {
+      g_clear_pointer(&self->shortcut_accels[SWASH_SHORTCUT_COPY], g_free);
+      self->shortcut_accels[SWASH_SHORTCUT_COPY] = g_strdup("");
+    } else if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "copy_shortcut", NULL)) {
+      g_autofree char *accelerator = g_key_file_get_string(key_file,
+                                                           SWASH_SETTINGS_GROUP,
+                                                           "copy_shortcut",
+                                                           NULL);
+
+      if (swash_window_parse_accelerator(accelerator, NULL, NULL)) {
+        g_free(self->shortcut_accels[SWASH_SHORTCUT_COPY]);
+        self->shortcut_accels[SWASH_SHORTCUT_COPY] = g_strdup(accelerator);
+      }
+    }
   }
 
   if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "angle_snap_modifiers", NULL)) {
@@ -345,7 +500,8 @@ swash_window_load_state(SwashWindow *self)
     g_autofree char *color_key = g_strdup_printf("tool_color_%s", name);
     g_autofree char *fill_key = g_strdup_printf("tool_fill_color_%s", name);
 
-    if (g_key_file_has_key(key_file, SWASH_STATE_GROUP, width_key, NULL)) {
+    if (self->remember_tool_sizes
+        && g_key_file_has_key(key_file, SWASH_STATE_GROUP, width_key, NULL)) {
       const double w = g_key_file_get_double(key_file, SWASH_STATE_GROUP, width_key, NULL);
 
       if (w >= 1.0 && w <= 200.0)
@@ -380,10 +536,6 @@ swash_window_save_preferences(SwashWindow *self)
 
   g_key_file_set_integer(key_file,
                          SWASH_SETTINGS_GROUP,
-                         "eraser_style",
-                         self->eraser_style);
-  g_key_file_set_integer(key_file,
-                         SWASH_SETTINGS_GROUP,
                          "window_background_mode",
                          self->window_background_mode);
   g_key_file_set_double(key_file,
@@ -404,20 +556,32 @@ swash_window_save_preferences(SwashWindow *self)
                          self->esc_closes_window);
   g_key_file_set_boolean(key_file,
                          SWASH_SETTINGS_GROUP,
-                         "copy_shortcut_enabled",
-                         self->copy_shortcut_enabled);
+                         "close_after_copy",
+                         self->close_after_copy);
+  g_key_file_set_boolean(key_file,
+                         SWASH_SETTINGS_GROUP,
+                         "close_after_save",
+                         self->close_after_save);
   g_key_file_set_boolean(key_file,
                          SWASH_SETTINGS_GROUP,
                          "auto_copy_latest_change",
                          self->auto_copy_latest_change);
   g_key_file_set_boolean(key_file,
                          SWASH_SETTINGS_GROUP,
+                         "remember_tool_sizes",
+                         self->remember_tool_sizes);
+  g_key_file_set_boolean(key_file,
+                         SWASH_SETTINGS_GROUP,
                          "allow_highlighter_overlap",
                          self->allow_highlighter_overlap);
-  g_key_file_set_string(key_file,
-                        SWASH_SETTINGS_GROUP,
-                        "copy_shortcut",
-                        self->copy_shortcut_accel);
+  for (int i = 0; i < SWASH_SHORTCUT_COUNT; i++) {
+    g_autofree char *key = g_strdup_printf("shortcut_%s", swash_shortcut_info[i].key);
+
+    g_key_file_set_string(key_file,
+                          SWASH_SETTINGS_GROUP,
+                          key,
+                          self->shortcut_accels[i] != NULL ? self->shortcut_accels[i] : "");
+  }
   g_key_file_set_integer(key_file,
                          SWASH_SETTINGS_GROUP,
                          "angle_snap_modifiers",
@@ -439,7 +603,8 @@ swash_window_save_preferences(SwashWindow *self)
     g_autofree char *color_str = gdk_rgba_to_string(&self->tool_colors[i]);
     g_autofree char *fill_str = gdk_rgba_to_string(&self->tool_fill_colors[i]);
 
-    g_key_file_set_double(key_file, SWASH_STATE_GROUP, width_key, self->tool_widths[i]);
+    if (self->remember_tool_sizes)
+      g_key_file_set_double(key_file, SWASH_STATE_GROUP, width_key, self->tool_widths[i]);
     g_key_file_set_string(key_file, SWASH_STATE_GROUP, color_key, color_str);
     g_key_file_set_string(key_file, SWASH_STATE_GROUP, fill_key, fill_str);
   }
@@ -452,33 +617,6 @@ swash_window_save_preferences(SwashWindow *self)
   data = g_key_file_to_data(key_file, &data_length, NULL);
   if (!g_file_set_contents(path, data, data_length, &error))
     g_warning("Failed to save preferences to %s: %s", path, error->message);
-}
-
-static const char *
-swash_window_eraser_style_label(SwashEraserStyle style)
-{
-  switch (style) {
-  case SWASH_ERASER_STYLE_DUAL_RING:
-    return "Dual ring";
-  case SWASH_ERASER_STYLE_DASHED_RING:
-    return "Dashed ring";
-  case SWASH_ERASER_STYLE_PATTERN:
-    return "Pattern fill";
-  default:
-    return "Dual ring";
-  }
-}
-
-static void
-swash_window_eraser_style_changed(AdwComboRow    *row,
-                                     GParamSpec     *pspec,
-                                     SwashWindow *self)
-{
-  (void) pspec;
-
-  self->eraser_style = adw_combo_row_get_selected(row);
-  swash_window_save_preferences(self);
-  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 static void
@@ -569,18 +707,24 @@ swash_window_esc_closes_window_changed(AdwSwitchRow   *row,
 }
 
 static void
-swash_window_copy_shortcut_enabled_changed(AdwSwitchRow   *row,
-                                              GParamSpec     *pspec,
-                                              SwashWindow *self)
+swash_window_close_after_copy_changed(AdwSwitchRow   *row,
+                                         GParamSpec     *pspec,
+                                         SwashWindow *self)
 {
-  GtkWidget *shortcut_row;
-
   (void) pspec;
 
-  self->copy_shortcut_enabled = adw_switch_row_get_active(row);
-  shortcut_row = g_object_get_data(G_OBJECT(row), "shortcut-row");
-  if (shortcut_row != NULL)
-    gtk_widget_set_sensitive(shortcut_row, self->copy_shortcut_enabled);
+  self->close_after_copy = adw_switch_row_get_active(row);
+  swash_window_save_preferences(self);
+}
+
+static void
+swash_window_close_after_save_changed(AdwSwitchRow   *row,
+                                         GParamSpec     *pspec,
+                                         SwashWindow *self)
+{
+  (void) pspec;
+
+  self->close_after_save = adw_switch_row_get_active(row);
   swash_window_save_preferences(self);
 }
 
@@ -592,6 +736,17 @@ swash_window_auto_copy_latest_change_changed(AdwSwitchRow   *row,
   (void) pspec;
 
   self->auto_copy_latest_change = adw_switch_row_get_active(row);
+  swash_window_save_preferences(self);
+}
+
+static void
+swash_window_remember_tool_sizes_changed(AdwSwitchRow   *row,
+                                            GParamSpec     *pspec,
+                                            SwashWindow *self)
+{
+  (void) pspec;
+
+  self->remember_tool_sizes = adw_switch_row_get_active(row);
   swash_window_save_preferences(self);
 }
 
@@ -630,33 +785,68 @@ swash_window_angle_snap_modifier_changed(AdwComboRow    *row,
   swash_window_save_preferences(self);
 }
 
+typedef struct {
+  SwashWindow *window;
+  SwashShortcut shortcut;
+  AdwActionRow *row;
+  GtkShortcutLabel *label;
+  GtkButton *capture_button;
+} SwashShortcutEditor;
+
 static void
-swash_window_apply_copy_shortcut_row(GtkButton *button,
-                                        gpointer   user_data)
+swash_window_begin_shortcut_capture(GtkButton *button,
+                                       gpointer   user_data)
 {
-  GtkWidget *shortcut_label;
-  (void) user_data;
+  SwashShortcutEditor *editor = user_data;
 
   gtk_button_set_has_frame(button, TRUE);
   gtk_widget_add_css_class(GTK_WIDGET(button), "suggested-action");
-  shortcut_label = g_object_get_data(G_OBJECT(button), "shortcut-label");
-  if (shortcut_label != NULL)
-    gtk_widget_set_sensitive(shortcut_label, FALSE);
+  gtk_widget_set_sensitive(GTK_WIDGET(editor->label), FALSE);
+  adw_action_row_set_subtitle(editor->row, "Press a shortcut, or Delete to clear");
   g_object_set_data(G_OBJECT(button), "capturing", GINT_TO_POINTER(TRUE));
 }
 
-static gboolean
-swash_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *controller,
-                                                  guint                  keyval,
-                                                  guint                  keycode,
-                                                  GdkModifierType        state,
-                                                  gpointer               user_data)
+static int
+swash_window_find_shortcut_conflict(SwashWindow   *self,
+                                       SwashShortcut shortcut,
+                                       const char    *accelerator)
 {
-  GtkWidget *button = GTK_WIDGET(user_data);
-  SwashWindow *self = SWASH_WINDOW(g_object_get_data(G_OBJECT(button), "window"));
-  GtkShortcutLabel *shortcut_label = GTK_SHORTCUT_LABEL(g_object_get_data(G_OBJECT(button), "shortcut-label"));
+  for (int i = 0; i < SWASH_SHORTCUT_COUNT; i++) {
+    if (i == (int) shortcut)
+      continue;
+
+    if (swash_accelerators_conflict(accelerator, self->shortcut_accels[i]))
+      return i;
+  }
+
+  return -1;
+}
+
+static void
+swash_window_set_shortcut(SwashWindow   *self,
+                             SwashShortcut shortcut,
+                             const char    *accelerator)
+{
+  g_free(self->shortcut_accels[shortcut]);
+  self->shortcut_accels[shortcut] = g_strdup(accelerator != NULL ? accelerator : "");
+  swash_window_apply_shortcuts(self);
+  swash_window_update_shortcut_tooltips(self);
+  swash_window_save_preferences(self);
+}
+
+static gboolean
+swash_window_shortcut_capture_key_pressed(GtkEventControllerKey *controller,
+                                             guint                  keyval,
+                                             guint                  keycode,
+                                             GdkModifierType        state,
+                                             gpointer               user_data)
+{
+  SwashShortcutEditor *editor = user_data;
+  GtkWidget *button = GTK_WIDGET(editor->capture_button);
+  SwashWindow *self = editor->window;
   GdkModifierType modifiers;
   g_autofree char *accelerator = NULL;
+  int conflict;
 
   (void) controller;
   (void) keycode;
@@ -669,14 +859,15 @@ swash_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *controller
   if (keyval == GDK_KEY_Escape && modifiers == 0) {
     gtk_button_set_has_frame(GTK_BUTTON(button), FALSE);
     gtk_widget_remove_css_class(button, "suggested-action");
-    gtk_widget_set_sensitive(GTK_WIDGET(shortcut_label), TRUE);
+    gtk_widget_set_sensitive(GTK_WIDGET(editor->label), TRUE);
+    adw_action_row_set_subtitle(editor->row, NULL);
     g_object_set_data(G_OBJECT(button), "capturing", GINT_TO_POINTER(FALSE));
     return TRUE;
   }
 
   if (keyval == GDK_KEY_BackSpace || keyval == GDK_KEY_Delete) {
-    swash_window_apply_copy_shortcut(self, "");
-    swash_window_update_shortcut_label(shortcut_label, "");
+    swash_window_set_shortcut(self, editor->shortcut, "");
+    swash_window_update_shortcut_label(editor->label, "");
   } else {
     if (keyval == GDK_KEY_Shift_L || keyval == GDK_KEY_Shift_R
         || keyval == GDK_KEY_Control_L || keyval == GDK_KEY_Control_R
@@ -690,17 +881,97 @@ swash_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *controller
     if (!swash_window_parse_accelerator(accelerator, NULL, NULL))
       return TRUE;
 
-    swash_window_apply_copy_shortcut(self, accelerator);
-    swash_window_update_shortcut_label(shortcut_label, self->copy_shortcut_accel);
+    conflict = swash_window_find_shortcut_conflict(self, editor->shortcut, accelerator);
+    if (conflict >= 0) {
+      g_autofree char *message = g_strdup_printf("Already used by %s",
+                                                 swash_shortcut_info[conflict].label);
+
+      adw_action_row_set_subtitle(editor->row, message);
+      return TRUE;
+    }
+
+    swash_window_set_shortcut(self, editor->shortcut, accelerator);
+    swash_window_update_shortcut_label(editor->label,
+                                       self->shortcut_accels[editor->shortcut]);
   }
 
-  swash_window_save_preferences(self);
   gtk_button_set_has_frame(GTK_BUTTON(button), FALSE);
   gtk_widget_remove_css_class(button, "suggested-action");
-  gtk_widget_set_sensitive(GTK_WIDGET(shortcut_label), TRUE);
+  gtk_widget_set_sensitive(GTK_WIDGET(editor->label), TRUE);
+  adw_action_row_set_subtitle(editor->row, NULL);
   g_object_set_data(G_OBJECT(button), "capturing", GINT_TO_POINTER(FALSE));
 
   return TRUE;
+}
+
+static void
+swash_window_reset_shortcut_clicked(GtkButton *button,
+                                       gpointer   user_data)
+{
+  SwashShortcutEditor *editor = user_data;
+  const char *accelerator = swash_shortcut_info[editor->shortcut].default_accel;
+  const int conflict = swash_window_find_shortcut_conflict(editor->window,
+                                                            editor->shortcut,
+                                                            accelerator);
+
+  (void) button;
+
+  if (conflict >= 0) {
+    g_autofree char *message = g_strdup_printf("Default is already used by %s",
+                                               swash_shortcut_info[conflict].label);
+
+    adw_action_row_set_subtitle(editor->row, message);
+    return;
+  }
+
+  swash_window_set_shortcut(editor->window, editor->shortcut, accelerator);
+  swash_window_update_shortcut_label(editor->label, accelerator);
+  adw_action_row_set_subtitle(editor->row, NULL);
+}
+
+static void
+swash_window_add_shortcut_row(AdwPreferencesGroup *group,
+                                 SwashWindow          *self,
+                                 SwashShortcut         shortcut)
+{
+  AdwActionRow *row = ADW_ACTION_ROW(adw_action_row_new());
+  GtkWidget *suffix = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  GtkButton *reset_button = GTK_BUTTON(gtk_button_new_from_icon_name("swash-view-refresh-symbolic"));
+  GtkButton *capture_button = GTK_BUTTON(gtk_button_new());
+  GtkShortcutLabel *label = GTK_SHORTCUT_LABEL(gtk_shortcut_label_new(NULL));
+  GtkEventController *keys = gtk_event_controller_key_new();
+  SwashShortcutEditor *editor = g_new0(SwashShortcutEditor, 1);
+
+  editor->window = self;
+  editor->shortcut = shortcut;
+  editor->row = row;
+  editor->label = label;
+  editor->capture_button = capture_button;
+
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row),
+                                swash_shortcut_info[shortcut].label);
+  swash_window_update_shortcut_label(label, self->shortcut_accels[shortcut]);
+  gtk_widget_set_tooltip_text(GTK_WIDGET(reset_button), "Reset shortcut");
+  gtk_button_set_child(capture_button, GTK_WIDGET(label));
+  gtk_box_append(GTK_BOX(suffix), GTK_WIDGET(reset_button));
+  gtk_box_append(GTK_BOX(suffix), GTK_WIDGET(capture_button));
+  adw_action_row_add_suffix(row, suffix);
+  gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
+  gtk_widget_add_controller(GTK_WIDGET(capture_button), keys);
+  g_signal_connect(capture_button,
+                   "clicked",
+                   G_CALLBACK(swash_window_begin_shortcut_capture),
+                   editor);
+  g_signal_connect(reset_button,
+                   "clicked",
+                   G_CALLBACK(swash_window_reset_shortcut_clicked),
+                   editor);
+  g_signal_connect(keys,
+                   "key-pressed",
+                   G_CALLBACK(swash_window_shortcut_capture_key_pressed),
+                   editor);
+  g_object_set_data_full(G_OBJECT(capture_button), "shortcut-editor", editor, g_free);
+  adw_preferences_group_add(group, GTK_WIDGET(row));
 }
 
 static void
@@ -761,62 +1032,53 @@ swash_window_show_preferences(SwashWindow *self)
 {
   AdwPreferencesDialog *dialog;
   AdwPreferencesPage *page;
+  AdwPreferencesPage *shortcuts_page;
   AdwPreferencesGroup *group;
   AdwPreferencesGroup *appearance_group;
   AdwPreferencesGroup *shortcuts_group;
-  AdwComboRow *row;
+  AdwPreferencesGroup *action_shortcuts_group;
+  AdwPreferencesGroup *tool_shortcuts_group;
   AdwComboRow *background_mode_row;
   AdwSwitchRow *floating_controls_blur_row;
   AdwSwitchRow *esc_closes_window_row;
-  AdwSwitchRow *copy_shortcut_enabled_row;
+  AdwSwitchRow *close_after_copy_row;
+  AdwSwitchRow *close_after_save_row;
   AdwSwitchRow *auto_copy_latest_change_row;
+  AdwSwitchRow *remember_tool_sizes_row;
   AdwSwitchRow *highlighter_overlap_row;
   AdwComboRow *angle_snap_modifier_row;
   AdwActionRow *opacity_row;
   AdwActionRow *floating_controls_opacity_row;
-  AdwActionRow *copy_shortcut_row;
-  GtkStringList *model;
   GtkStringList *background_model;
   GtkStringList *angle_snap_model;
   GtkAdjustment *opacity_adjustment;
   GtkSpinButton *opacity_spin_button;
   GtkAdjustment *floating_controls_opacity_adjustment;
   GtkSpinButton *floating_controls_opacity_spin_button;
-  GtkWidget *copy_shortcut_label;
-  GtkWidget *copy_shortcut_button;
-  GtkWidget *copy_shortcut_button_box;
-  GtkEventController *copy_shortcut_key_controller;
 
   dialog = ADW_PREFERENCES_DIALOG(adw_preferences_dialog_new());
   page = ADW_PREFERENCES_PAGE(adw_preferences_page_new());
+  shortcuts_page = ADW_PREFERENCES_PAGE(adw_preferences_page_new());
   group = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
   appearance_group = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
   shortcuts_group = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-  row = ADW_COMBO_ROW(adw_combo_row_new());
+  action_shortcuts_group = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+  tool_shortcuts_group = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
   background_mode_row = ADW_COMBO_ROW(adw_combo_row_new());
   floating_controls_blur_row = ADW_SWITCH_ROW(adw_switch_row_new());
   esc_closes_window_row = ADW_SWITCH_ROW(adw_switch_row_new());
-  copy_shortcut_enabled_row = ADW_SWITCH_ROW(adw_switch_row_new());
+  close_after_copy_row = ADW_SWITCH_ROW(adw_switch_row_new());
+  close_after_save_row = ADW_SWITCH_ROW(adw_switch_row_new());
   auto_copy_latest_change_row = ADW_SWITCH_ROW(adw_switch_row_new());
+  remember_tool_sizes_row = ADW_SWITCH_ROW(adw_switch_row_new());
   highlighter_overlap_row = ADW_SWITCH_ROW(adw_switch_row_new());
   angle_snap_modifier_row = ADW_COMBO_ROW(adw_combo_row_new());
   opacity_row = ADW_ACTION_ROW(adw_action_row_new());
   floating_controls_opacity_row = ADW_ACTION_ROW(adw_action_row_new());
-  copy_shortcut_row = ADW_ACTION_ROW(adw_action_row_new());
   opacity_adjustment = gtk_adjustment_new(self->window_background_opacity, 0.1, 1.0, 0.1, 0.1, 0.0);
   opacity_spin_button = GTK_SPIN_BUTTON(gtk_spin_button_new(opacity_adjustment, 0.1, 1));
   floating_controls_opacity_adjustment = gtk_adjustment_new(self->floating_controls_opacity, 0.0, 1.0, 0.1, 0.1, 0.0);
   floating_controls_opacity_spin_button = GTK_SPIN_BUTTON(gtk_spin_button_new(floating_controls_opacity_adjustment, 0.1, 1));
-  copy_shortcut_label = gtk_shortcut_label_new(NULL);
-  copy_shortcut_button = gtk_button_new();
-  copy_shortcut_button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-  copy_shortcut_key_controller = gtk_event_controller_key_new();
-  model = gtk_string_list_new((const char *[]) {
-    swash_window_eraser_style_label(SWASH_ERASER_STYLE_DUAL_RING),
-    swash_window_eraser_style_label(SWASH_ERASER_STYLE_DASHED_RING),
-    swash_window_eraser_style_label(SWASH_ERASER_STYLE_PATTERN),
-    NULL,
-  });
   //yes this is really how you have to do dropdowns in gtk
   background_model = gtk_string_list_new((const char *[]) {
     swash_window_background_mode_label(SWASH_WINDOW_BACKGROUND_FOLLOW_SYSTEM),
@@ -834,12 +1096,16 @@ swash_window_show_preferences(SwashWindow *self)
   });
 
   adw_preferences_page_set_title(page, "General");
+  adw_preferences_page_set_name(page, "general");
+  adw_preferences_page_set_icon_name(page, "swash-preferences-symbolic");
+  adw_preferences_page_set_title(shortcuts_page, "Shortcuts");
+  adw_preferences_page_set_name(shortcuts_page, "shortcuts");
+  adw_preferences_page_set_icon_name(shortcuts_page, "swash-shortcuts-symbolic");
   adw_preferences_group_set_title(group, "General");
   adw_preferences_group_set_title(appearance_group, "Appearance");
-  adw_preferences_group_set_title(shortcuts_group, "Shortcuts");
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), "Eraser Styling");
-  adw_combo_row_set_model(row, G_LIST_MODEL(model));
-  adw_combo_row_set_selected(row, self->eraser_style);
+  adw_preferences_group_set_title(shortcuts_group, "Keyboard");
+  adw_preferences_group_set_title(action_shortcuts_group, "Action shortcuts");
+  adw_preferences_group_set_title(tool_shortcuts_group, "Tool shortcuts");
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(background_mode_row), "Window background");
   adw_combo_row_set_model(background_mode_row, G_LIST_MODEL(background_model));
   adw_combo_row_set_selected(background_mode_row, self->window_background_mode);
@@ -863,20 +1129,10 @@ swash_window_show_preferences(SwashWindow *self)
                                         GTK_WIDGET(floating_controls_opacity_spin_button));
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(esc_closes_window_row), "Escape closes window");
   adw_switch_row_set_active(esc_closes_window_row, self->esc_closes_window);
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(copy_shortcut_enabled_row), "Enable copy shortcut");
-  adw_switch_row_set_active(copy_shortcut_enabled_row, self->copy_shortcut_enabled);
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(copy_shortcut_row), "Copy shortcut");
-  swash_window_update_shortcut_label(GTK_SHORTCUT_LABEL(copy_shortcut_label), self->copy_shortcut_accel);
-  gtk_widget_set_valign(copy_shortcut_label, GTK_ALIGN_CENTER);
-  gtk_widget_set_halign(copy_shortcut_label, GTK_ALIGN_END);
-  gtk_widget_set_hexpand(copy_shortcut_button_box, FALSE);
-  gtk_widget_set_halign(copy_shortcut_button_box, GTK_ALIGN_END);
-  gtk_box_append(GTK_BOX(copy_shortcut_button_box), copy_shortcut_label);
-  gtk_button_set_child(GTK_BUTTON(copy_shortcut_button), copy_shortcut_button_box);
-  gtk_widget_set_valign(copy_shortcut_button, GTK_ALIGN_CENTER);
-  gtk_widget_add_controller(copy_shortcut_button, copy_shortcut_key_controller);
-  adw_action_row_add_suffix(copy_shortcut_row, copy_shortcut_button);
-  gtk_widget_set_sensitive(GTK_WIDGET(copy_shortcut_row), self->copy_shortcut_enabled);
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(close_after_copy_row), "Close after copy");
+  adw_switch_row_set_active(close_after_copy_row, self->close_after_copy);
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(close_after_save_row), "Close after save");
+  adw_switch_row_set_active(close_after_save_row, self->close_after_save);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(angle_snap_modifier_row), "Snap modifier");
   adw_combo_row_set_model(angle_snap_modifier_row, G_LIST_MODEL(angle_snap_model));
   switch (self->angle_snap_modifiers) {
@@ -899,28 +1155,37 @@ swash_window_show_preferences(SwashWindow *self)
   }
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(auto_copy_latest_change_row), "Auto-copy latest change");
   adw_switch_row_set_active(auto_copy_latest_change_row, self->auto_copy_latest_change);
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(remember_tool_sizes_row), "Remember tool sizes");
+  adw_switch_row_set_active(remember_tool_sizes_row, self->remember_tool_sizes);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(highlighter_overlap_row), "Allow highlighter strokes to overlap");
   adw_switch_row_set_active(highlighter_overlap_row, self->allow_highlighter_overlap);
-  adw_preferences_group_add(group, GTK_WIDGET(row));
-  adw_preferences_group_add(group, GTK_WIDGET(highlighter_overlap_row));
+  adw_preferences_group_add(group, GTK_WIDGET(close_after_copy_row));
+  adw_preferences_group_add(group, GTK_WIDGET(close_after_save_row));
   adw_preferences_group_add(group, GTK_WIDGET(auto_copy_latest_change_row));
+  adw_preferences_group_add(group, GTK_WIDGET(remember_tool_sizes_row));
+  adw_preferences_group_add(group, GTK_WIDGET(highlighter_overlap_row));
   adw_preferences_group_add(appearance_group, GTK_WIDGET(background_mode_row));
   adw_preferences_group_add(appearance_group, GTK_WIDGET(opacity_row));
   adw_preferences_group_add(appearance_group, GTK_WIDGET(floating_controls_blur_row));
   adw_preferences_group_add(appearance_group, GTK_WIDGET(floating_controls_opacity_row));
   adw_preferences_group_add(shortcuts_group, GTK_WIDGET(esc_closes_window_row));
-  adw_preferences_group_add(shortcuts_group, GTK_WIDGET(copy_shortcut_enabled_row));
-  adw_preferences_group_add(shortcuts_group, GTK_WIDGET(copy_shortcut_row));
   adw_preferences_group_add(shortcuts_group, GTK_WIDGET(angle_snap_modifier_row));
+  for (int i = SWASH_SHORTCUT_OPEN; i <= SWASH_SHORTCUT_QUIT; i++)
+    swash_window_add_shortcut_row(action_shortcuts_group, self, i);
+  for (int i = SWASH_SHORTCUT_TOOL_MOVE; i < SWASH_SHORTCUT_COUNT; i++)
+    swash_window_add_shortcut_row(tool_shortcuts_group, self, i);
   adw_preferences_page_add(page, group);
   adw_preferences_page_add(page, appearance_group);
-  adw_preferences_page_add(page, shortcuts_group);
+  adw_preferences_page_add(shortcuts_page, shortcuts_group);
+  adw_preferences_page_add(shortcuts_page, action_shortcuts_group);
+  adw_preferences_page_add(shortcuts_page, tool_shortcuts_group);
   adw_preferences_dialog_add(dialog, page);
+  adw_preferences_dialog_add(dialog, shortcuts_page);
   adw_dialog_set_title(ADW_DIALOG(dialog), "Preferences");
-  adw_preferences_dialog_set_search_enabled(dialog, FALSE);
-  adw_dialog_set_content_width(ADW_DIALOG(dialog), 420);
+  adw_preferences_dialog_set_search_enabled(dialog, TRUE);
+  adw_dialog_set_content_width(ADW_DIALOG(dialog), 720);
+  adw_dialog_set_content_height(ADW_DIALOG(dialog), 640);
 
-  g_signal_connect(row, "notify::selected", G_CALLBACK(swash_window_eraser_style_changed), self);
   g_signal_connect(background_mode_row,
                    "notify::selected",
                    G_CALLBACK(swash_window_background_mode_changed),
@@ -941,9 +1206,13 @@ swash_window_show_preferences(SwashWindow *self)
                    "notify::active",
                    G_CALLBACK(swash_window_esc_closes_window_changed),
                    self);
-  g_signal_connect(copy_shortcut_enabled_row,
+  g_signal_connect(close_after_copy_row,
                    "notify::active",
-                   G_CALLBACK(swash_window_copy_shortcut_enabled_changed),
+                   G_CALLBACK(swash_window_close_after_copy_changed),
+                   self);
+  g_signal_connect(close_after_save_row,
+                   "notify::active",
+                   G_CALLBACK(swash_window_close_after_save_changed),
                    self);
   g_signal_connect(angle_snap_modifier_row,
                    "notify::selected",
@@ -953,24 +1222,15 @@ swash_window_show_preferences(SwashWindow *self)
                    "notify::active",
                    G_CALLBACK(swash_window_auto_copy_latest_change_changed),
                    self);
+  g_signal_connect(remember_tool_sizes_row,
+                   "notify::active",
+                   G_CALLBACK(swash_window_remember_tool_sizes_changed),
+                   self);
   g_signal_connect(highlighter_overlap_row,
                    "notify::active",
                    G_CALLBACK(swash_window_highlighter_overlap_changed),
                    self);
-  g_object_set_data(G_OBJECT(copy_shortcut_enabled_row), "shortcut-row", copy_shortcut_row);
-  g_object_set_data(G_OBJECT(copy_shortcut_button), "window", self);
-  g_object_set_data(G_OBJECT(copy_shortcut_button), "shortcut-label", copy_shortcut_label);
-  g_signal_connect(copy_shortcut_button,
-                   "clicked",
-                   G_CALLBACK(swash_window_apply_copy_shortcut_row),
-                   NULL);
-  g_signal_connect(copy_shortcut_key_controller,
-                   "key-pressed",
-                   G_CALLBACK(swash_window_copy_shortcut_capture_key_pressed),
-                   copy_shortcut_button);
-
   adw_dialog_present(ADW_DIALOG(dialog), GTK_WIDGET(self));
-  g_object_unref(model);
   g_object_unref(background_model);
   g_object_unref(angle_snap_model);
 }
@@ -1387,6 +1647,7 @@ swash_window_maybe_start_ocr(SwashWindow *self)
 }
 
 static void swash_window_save_copy_ready(GObject *source_object, GAsyncResult *result, gpointer user_data);
+static void swash_window_prompt_save(SwashWindow *self, gboolean as_copy);
 static void swash_window_save_overwrite_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
 static void swash_window_save_copy_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
 static void swash_window_rotate_counter_clockwise_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
@@ -1400,6 +1661,18 @@ static void swash_window_open_current_file_action(GtkWidget *widget, const char 
 static void swash_window_open_containing_folder_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
 static void swash_window_open_parent_folder(SwashWindow *self);
 
+typedef struct {
+  SwashWindow *window;
+  GFile *file;
+  gboolean adopt_file;
+  gboolean close_after_save;
+} SwashSaveOperation;
+
+typedef struct {
+  SwashWindow *window;
+  gboolean as_copy;
+} SwashSaveDialog;
+
 static gboolean
 swash_window_restore_copy_button(gpointer user_data)
 {
@@ -1412,7 +1685,8 @@ swash_window_restore_copy_button(gpointer user_data)
 }
 
 void
-swash_window_trigger_copy(SwashWindow *self)
+swash_window_trigger_copy(SwashWindow *self,
+                             gboolean        user_initiated)
 {
   g_autoptr(GError) error = NULL;
   g_autoptr(GTask) task = NULL;
@@ -1438,6 +1712,7 @@ swash_window_trigger_copy(SwashWindow *self)
   }
 
   self->copy_in_progress = TRUE;
+  self->close_after_current_copy = user_initiated && self->close_after_copy;
   task = g_task_new(self, NULL, swash_window_copy_export_ready, g_object_ref(self));
   g_task_set_task_data(task, request, (GDestroyNotify) swash_export_request_free);
   g_task_run_in_thread(task, swash_export_run_task);
@@ -1454,7 +1729,7 @@ swash_window_maybe_auto_copy_latest_change(SwashWindow *self)
     return;
   }
 
-  swash_window_trigger_copy(self);
+  swash_window_trigger_copy(self, FALSE);
 }
 
 static void
@@ -1476,7 +1751,7 @@ swash_window_reset_save_button(SwashWindow *self)
 
   gtk_stack_set_visible_child(self->save_icon_stack, GTK_WIDGET(self->save_default_icon));
   gtk_widget_set_sensitive(GTK_WIDGET(self->save_button), has_unsaved_changes || self->texture != NULL);
-  gtk_widget_action_set_enabled(GTK_WIDGET(self), "win.save", has_unsaved_changes && self->current_file != NULL);
+  gtk_widget_action_set_enabled(GTK_WIDGET(self), "win.save", self->texture != NULL);
   gtk_widget_action_set_enabled(GTK_WIDGET(self), "win.save-copy", self->texture != NULL);
 }
 
@@ -1713,6 +1988,10 @@ swash_window_refresh_image_from_document(SwashWindow *self)
     cairo_surface_destroy(self->image_surface);
     self->image_surface = NULL;
   }
+  if (self->annotation_cache != NULL) {
+    cairo_surface_destroy(self->annotation_cache);
+    self->annotation_cache = NULL;
+  }
 
   if (!swash_document_get_image(self->document, &pixels, &width, &height, &stride)) {
     gtk_picture_set_paintable(self->picture, NULL);
@@ -1773,6 +2052,8 @@ swash_window_refresh_document_state(SwashWindow *self)
   self->crop_start_y = 0.0;
   self->crop_end_x = 0.0;
   self->crop_end_y = 0.0;
+  self->crop_selection_active = FALSE;
+  self->crop_drag_mode = 0;
   swash_window_clear_ocr_results(self);
   swash_window_apply_zoom_mode(self);
   swash_window_update_zoom_label(self);
@@ -1796,6 +2077,22 @@ swash_window_log_formats(const char      *label,
 }
 
 static void
+swash_window_clipboard_store_ready(GObject      *source_object,
+                                      GAsyncResult *result,
+                                      gpointer      user_data)
+{
+  SwashWindow *self = SWASH_WINDOW(user_data);
+  g_autoptr(GError) error = NULL;
+
+  if (gdk_clipboard_store_finish(GDK_CLIPBOARD(source_object), result, &error))
+    gtk_window_destroy(GTK_WINDOW(self));
+  else
+    swash_window_show_error(self, error->message);
+
+  g_object_unref(self);
+}
+
+static void
 swash_window_copy_export_ready(GObject      *source_object,
                                   GAsyncResult *result,
                                   gpointer      user_data)
@@ -1808,11 +2105,13 @@ swash_window_copy_export_ready(GObject      *source_object,
   g_autoptr(GdkContentProvider) texture_provider = NULL;
   g_autoptr(GdkContentFormats) provider_formats = NULL;
   GdkClipboard *clipboard;
+  const gboolean close_after_copy = self->close_after_current_copy;
 
   (void) source_object;
 
   copy_result = g_task_propagate_pointer(G_TASK(result), &error);
   self->copy_in_progress = FALSE;
+  self->close_after_current_copy = FALSE;
   if (copy_result == NULL) {
     swash_window_show_error(self, error->message);
     if (self->auto_copy_pending) {
@@ -1848,8 +2147,19 @@ swash_window_copy_export_ready(GObject      *source_object,
   }
 
   swash_window_log_formats("Clipboard accepted formats", gdk_clipboard_get_formats(clipboard));
-  swash_window_flash_copy_success(self);
   swash_copy_result_free(copy_result);
+  if (close_after_copy) {
+    self->auto_copy_pending = FALSE;
+    gdk_clipboard_store_async(clipboard,
+                              G_PRIORITY_DEFAULT,
+                              NULL,
+                              swash_window_clipboard_store_ready,
+                              g_object_ref(self));
+    g_object_unref(self);
+    return;
+  }
+
+  swash_window_flash_copy_success(self);
   if (self->auto_copy_pending) {
     self->auto_copy_pending = FALSE;
     swash_window_maybe_auto_copy_latest_change(self);
@@ -1858,11 +2168,20 @@ swash_window_copy_export_ready(GObject      *source_object,
 }
 
 static void
+swash_save_operation_free(SwashSaveOperation *operation)
+{
+  g_clear_object(&operation->file);
+  g_clear_object(&operation->window);
+  g_free(operation);
+}
+
+static void
 swash_window_save_export_ready(GObject      *source_object,
                                   GAsyncResult *result,
                                   gpointer      user_data)
 {
-  SwashWindow *self = SWASH_WINDOW(user_data);
+  SwashSaveOperation *operation = user_data;
+  SwashWindow *self = operation->window;
   g_autoptr(GError) error = NULL;
 
   (void) source_object;
@@ -1878,13 +2197,65 @@ swash_window_save_export_ready(GObject      *source_object,
     self->save_feedback_timeout_id = 0;
     swash_window_reset_save_button(self);
     swash_window_show_error(self, error->message);
-    g_object_unref(self);
+    swash_save_operation_free(operation);
     return;
   }
 
+  if (operation->adopt_file) {
+    g_autofree char *basename = g_file_get_basename(operation->file);
+
+    g_set_object(&self->current_file, operation->file);
+    g_free(self->source_name);
+    self->source_name = g_strdup(basename);
+    gtk_label_set_text(self->file_label, self->source_name);
+  }
+
   swash_window_mark_saved(self);
+  if (operation->close_after_save) {
+    gtk_window_destroy(GTK_WINDOW(self));
+    swash_save_operation_free(operation);
+    return;
+  }
+
   swash_window_finish_save_feedback(self);
-  g_object_unref(self);
+  swash_save_operation_free(operation);
+}
+
+static void
+swash_window_begin_save_to_file(SwashWindow *self,
+                                   GFile          *file,
+                                   gboolean        adopt_file)
+{
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GTask) task = NULL;
+  SwashExportRequest *request;
+  SwashSaveOperation *operation;
+
+  request = swash_export_request_new(self->texture,
+                                     swash_window_strokes(self),
+                                     SWASH_EXPORT_SAVE,
+                                     file,
+                                     NULL,
+                                     swash_stroke_copy,
+                                     (GDestroyNotify) swash_stroke_free,
+                                     self->allow_highlighter_overlap,
+                                     swash_stroke_render,
+                                     swash_document_get_image_generation(self->document),
+                                     &error);
+  if (request == NULL) {
+    swash_window_show_error(self, error->message);
+    return;
+  }
+
+  operation = g_new0(SwashSaveOperation, 1);
+  operation->window = g_object_ref(self);
+  operation->file = g_object_ref(file);
+  operation->adopt_file = adopt_file;
+  operation->close_after_save = self->close_after_save;
+  swash_window_begin_save_feedback(self);
+  task = g_task_new(self, NULL, swash_window_save_export_ready, operation);
+  g_task_set_task_data(task, request, (GDestroyNotify) swash_export_request_free);
+  g_task_run_in_thread(task, swash_export_run_task);
 }
 
 static void
@@ -1892,44 +2263,25 @@ swash_window_save_copy_ready(GObject      *source_object,
                                 GAsyncResult *result,
                                 gpointer      user_data)
 {
-  SwashWindow *self = SWASH_WINDOW(user_data);
+  SwashSaveDialog *save_dialog = user_data;
+  SwashWindow *self = save_dialog->window;
   g_autoptr(GError) error = NULL;
   g_autoptr(GFile) file = NULL;
-  g_autoptr(GTask) task = NULL;
-  SwashExportRequest *request;
 
   file = gtk_file_dialog_save_finish(GTK_FILE_DIALOG(source_object), result, &error);
   if (file == NULL) {
     if (!swash_window_error_is_user_dismissed(error))
       swash_window_show_error(self, error->message);
 
-    g_object_unref(self);
+    g_object_unref(save_dialog->window);
+    g_free(save_dialog);
     return;
   }
 
-  request = swash_export_request_new(self->texture,
-                                        swash_window_strokes(self),
-                                        SWASH_EXPORT_SAVE,
-                                        file,
-                                        NULL,
-                                        swash_stroke_copy,
-                                        (GDestroyNotify) swash_stroke_free,
-                                        self->allow_highlighter_overlap,
-                                        swash_stroke_render,
-                                        swash_document_get_image_generation(self->document),
-                                        &error);
-  if (request == NULL) {
-    swash_window_show_error(self, error->message);
-    g_object_unref(self);
-    return;
-  }
+  swash_window_begin_save_to_file(self, file, !save_dialog->as_copy);
 
-  swash_window_begin_save_feedback(self);
-  task = g_task_new(self, NULL, swash_window_save_export_ready, g_object_ref(self));
-  g_task_set_task_data(task, request, (GDestroyNotify) swash_export_request_free);
-  g_task_run_in_thread(task, swash_export_run_task);
-
-  g_object_unref(self);
+  g_object_unref(save_dialog->window);
+  g_free(save_dialog);
 }
 
 static void
@@ -1938,36 +2290,48 @@ swash_window_save_overwrite_action(GtkWidget  *widget,
                                       GVariant   *parameter)
 {
   SwashWindow *self = SWASH_WINDOW(widget);
-  g_autoptr(GError) error = NULL;
-  g_autoptr(GTask) task = NULL;
-  SwashExportRequest *request;
-
   (void) action_name;
   (void) parameter;
 
-  if (self->current_file == NULL)
+  if (self->texture == NULL)
     return;
 
-  request = swash_export_request_new(self->texture,
-                                        swash_window_strokes(self),
-                                        SWASH_EXPORT_SAVE,
-                                        self->current_file,
-                                        NULL,
-                                        swash_stroke_copy,
-                                        (GDestroyNotify) swash_stroke_free,
-                                        self->allow_highlighter_overlap,
-                                        swash_stroke_render,
-                                        swash_document_get_image_generation(self->document),
-                                        &error);
-  if (request == NULL) {
-    swash_window_show_error(self, error->message);
+  if (self->current_file == NULL) {
+    swash_window_prompt_save(self, FALSE);
     return;
   }
 
-  swash_window_begin_save_feedback(self);
-  task = g_task_new(self, NULL, swash_window_save_export_ready, g_object_ref(self));
-  g_task_set_task_data(task, request, (GDestroyNotify) swash_export_request_free);
-  g_task_run_in_thread(task, swash_export_run_task);
+  swash_window_begin_save_to_file(self, self->current_file, FALSE);
+}
+
+static void
+swash_window_prompt_save(SwashWindow *self,
+                            gboolean        as_copy)
+{
+  g_autoptr(GtkFileDialog) dialog = gtk_file_dialog_new();
+  g_autofree char *basename = NULL;
+  g_autofree char *suggested_name = NULL;
+  SwashSaveDialog *save_dialog = g_new0(SwashSaveDialog, 1);
+
+  if (self->current_file != NULL)
+    basename = g_file_get_basename(self->current_file);
+
+  if (as_copy)
+    suggested_name = swash_window_make_copy_name(basename != NULL ? basename : self->source_name);
+  else
+    suggested_name = g_strdup(basename != NULL ? basename : self->source_name);
+
+  save_dialog->window = g_object_ref(self);
+  save_dialog->as_copy = as_copy;
+  gtk_file_dialog_set_title(dialog, as_copy ? "Save as copy" : "Save image");
+  gtk_file_dialog_set_initial_name(dialog,
+                                   suggested_name != NULL ? suggested_name : "image.png");
+
+  gtk_file_dialog_save(dialog,
+                       GTK_WINDOW(self),
+                       NULL,
+                       swash_window_save_copy_ready,
+                       save_dialog);
 }
 
 static void
@@ -1975,27 +2339,10 @@ swash_window_save_copy_action(GtkWidget  *widget,
                                  const char *action_name,
                                  GVariant   *parameter)
 {
-  SwashWindow *self = SWASH_WINDOW(widget);
-  g_autoptr(GtkFileDialog) dialog = gtk_file_dialog_new();
-  g_autofree char *basename = NULL;
-  g_autofree char *copy_name = NULL;
-
   (void) action_name;
   (void) parameter;
 
-  if (self->current_file != NULL)
-    basename = g_file_get_basename(self->current_file);
-
-  copy_name = swash_window_make_copy_name(basename != NULL ? basename : self->source_name);
-
-  gtk_file_dialog_set_title(dialog, "Save as copy");
-  gtk_file_dialog_set_initial_name(dialog, copy_name);
-
-  gtk_file_dialog_save(dialog,
-                       GTK_WINDOW(self),
-                       NULL,
-                       swash_window_save_copy_ready,
-                       g_object_ref(self));
+  swash_window_prompt_save(SWASH_WINDOW(widget), TRUE);
 }
 
 static void
@@ -2203,7 +2550,25 @@ swash_window_copy_clicked(GtkButton *button,
 
   (void) button;
 
-  swash_window_trigger_copy(self);
+  swash_window_trigger_copy(self, TRUE);
+}
+
+static void
+swash_window_crop_cancel_clicked(GtkButton *button,
+                                    gpointer   user_data)
+{
+  (void) button;
+
+  swash_window_cancel_pending_crop(SWASH_WINDOW(user_data));
+}
+
+static void
+swash_window_crop_apply_clicked(GtkButton *button,
+                                   gpointer   user_data)
+{
+  (void) button;
+
+  swash_window_apply_pending_crop(SWASH_WINDOW(user_data));
 }
 
 static void
@@ -2513,6 +2878,10 @@ swash_window_dispose(GObject *object)
     cairo_surface_destroy(self->image_surface);
     self->image_surface = NULL;
   }
+  if (self->annotation_cache != NULL) {
+    cairo_surface_destroy(self->annotation_cache);
+    self->annotation_cache = NULL;
+  }
   swash_window_clear_ocr_results(self);
   swash_window_clear_annotations(self);
   if (self->copy_feedback_timeout_id != 0)
@@ -2533,7 +2902,8 @@ swash_window_dispose(GObject *object)
     gtk_style_context_remove_provider_for_display(gdk_display_get_default(),
                                                   GTK_STYLE_PROVIDER(self->widget_css_provider));
   g_clear_object(&self->widget_css_provider);
-  g_clear_pointer(&self->copy_shortcut_accel, g_free);
+  for (int i = 0; i < SWASH_SHORTCUT_COUNT; i++)
+    g_clear_pointer(&self->shortcut_accels[i], g_free);
   g_clear_pointer(&self->active_touch_sequences, g_hash_table_unref);
   g_clear_pointer(&self->touch_tap_points, g_hash_table_unref);
 
@@ -2565,6 +2935,8 @@ swash_window_bind_template_children(GtkWidgetClass *widget_class)
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, start_window_controls_pill);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, start_window_controls);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, open_actions);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, open_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, empty_open_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, file_group);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, file_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, file_label);
@@ -2603,8 +2975,14 @@ swash_window_bind_template_children(GtkWidgetClass *widget_class)
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, copy_default_icon);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, copy_success_icon);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, zoom_group);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, zoom_out_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, zoom_in_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, fit_zoom_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, settings_group);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, crop_controls);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, crop_dimensions_label);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, crop_cancel_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, crop_apply_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, color_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, fill_color_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, width_scale);
@@ -2612,6 +2990,10 @@ swash_window_bind_template_children(GtkWidgetClass *widget_class)
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, size_button_label);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, text_size_spin);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, precise_size_spin);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, small_size_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, medium_size_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, large_size_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, reset_size_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, blur_type_dropdown);
 }
 
@@ -2649,17 +3031,19 @@ swash_window_init_state(SwashWindow *self)
   self->ocr_all_text = NULL;
   self->pinch_start_zoom = 1.0;
   self->pointer_in = FALSE;
-  self->eraser_style = SWASH_ERASER_STYLE_DUAL_RING;
   self->window_background_mode = SWASH_WINDOW_BACKGROUND_OPAQUE;
   self->window_background_opacity = 0.8;
   self->esc_closes_window = TRUE;
-  self->copy_shortcut_enabled = TRUE;
+  self->close_after_copy = FALSE;
+  self->close_after_save = FALSE;
   self->angle_snap_modifiers = GDK_SHIFT_MASK;
   self->allow_highlighter_overlap = TRUE;
   self->floating_controls_blur = TRUE;
   self->auto_copy_latest_change = FALSE;
+  self->remember_tool_sizes = TRUE;
   self->floating_controls_opacity = 0.7;
-  swash_window_apply_copy_shortcut(self, "<Primary>c");
+  for (int i = 0; i < SWASH_SHORTCUT_COUNT; i++)
+    self->shortcut_accels[i] = g_strdup(swash_shortcut_info[i].default_accel);
   swash_window_load_preferences(self);
 
   for (int i = 0; i <= SWASH_TOOL_MOVE; i++)
@@ -2859,12 +3243,17 @@ swash_window_init(SwashWindow *self)
                                  swash_window_drawing_area_draw,
                                  self,
                                  NULL);
+  self->active_stroke_overlay = swash_stroke_overlay_new(self);
+  gtk_overlay_add_overlay(GTK_OVERLAY(self->canvas_surface),
+                          self->active_stroke_overlay);
   swash_window_setup_ocr_panel(self);
   swash_window_setup_window_controls(self);
   swash_window_setup_popovers(self);
   swash_window_setup_controllers(self);
   swash_window_setup_signals(self);
   g_signal_connect(self->copy_button, "clicked", G_CALLBACK(swash_window_copy_clicked), self);
+  g_signal_connect(self->crop_cancel_button, "clicked", G_CALLBACK(swash_window_crop_cancel_clicked), self);
+  g_signal_connect(self->crop_apply_button, "clicked", G_CALLBACK(swash_window_crop_apply_clicked), self);
   g_signal_connect(self->ocr_panel_toggle_button, "toggled", G_CALLBACK(swash_window_ocr_panel_toggled), self);
   g_signal_connect(self->ocr_panel_close_button, "clicked", G_CALLBACK(swash_window_ocr_panel_close_clicked), self);
   g_signal_connect(self->ocr_panel_bottom_sheet, "notify::open", G_CALLBACK(swash_window_ocr_panel_open_changed), self);
@@ -2872,6 +3261,7 @@ swash_window_init(SwashWindow *self)
   swash_window_activate_tool_button(self);
   swash_window_update_size_controls(self);
   swash_window_update_tool_ui(self);
+  swash_window_update_shortcut_tooltips(self);
   swash_window_sync_state(self);
 }
 
@@ -2884,7 +3274,10 @@ swash_window_save_state(SwashWindow *self)
 SwashWindow *
 swash_window_new(AdwApplication *app)
 {
-  return g_object_new(SWASH_TYPE_WINDOW,
-                      "application", app,
-                      NULL);
+  SwashWindow *window = g_object_new(SWASH_TYPE_WINDOW,
+                                     "application", app,
+                                     NULL);
+
+  swash_window_apply_shortcuts(window);
+  return window;
 }

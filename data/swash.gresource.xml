@@ -25,10 +25,12 @@
     <file alias="swash-pan-down-symbolic.svg">icons/scalable/actions/swash-pan-down-symbolic.svg</file>
     <file alias="swash-pan-symbolic.svg">icons/scalable/actions/swash-pan-symbolic.svg</file>
     <file alias="swash-pencil-symbolic.svg">icons/scalable/actions/swash-pencil-symbolic.svg</file>
+    <file alias="swash-preferences-symbolic.svg">icons/scalable/actions/swash-preferences-symbolic.svg</file>
     <file alias="swash-rectangle-symbolic.svg">icons/scalable/actions/swash-rectangle-symbolic.svg</file>
     <file alias="swash-rotate-counter-clockwise-symbolic.svg">icons/scalable/actions/swash-rotate-counter-clockwise-symbolic.svg</file>
     <file alias="swash-scanner-symbolic.svg">icons/scalable/actions/swash-scanner-symbolic.svg</file>
     <file alias="swash-shapes-symbolic.svg">icons/scalable/actions/swash-shapes-symbolic.svg</file>
+    <file alias="swash-shortcuts-symbolic.svg">icons/scalable/actions/swash-shortcuts-symbolic.svg</file>
     <file alias="swash-text-symbolic.svg">icons/scalable/actions/swash-text-symbolic.svg</file>
     <file alias="swash-view-more-symbolic.svg">icons/scalable/actions/swash-view-more-symbolic.svg</file>
     <file alias="swash-view-refresh-symbolic.svg">icons/scalable/actions/swash-view-refresh-symbolic.svg</file>

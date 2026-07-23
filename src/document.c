@@ -19,6 +19,7 @@ struct _SwashDocument {
   int image_height;
   gsize image_stride;
   guint image_generation;
+  guint annotations_generation;
   SwashDocumentSnapshot *saved_state;
   GQueue *undo_history;
   GQueue *redo_history;
@@ -180,6 +181,7 @@ swash_document_apply_snapshot(SwashDocument         *document,
   document->image_height = snapshot->image_height;
   document->image_stride = snapshot->image_stride;
   document->strokes = g_steal_pointer(&snapshot->strokes);
+  document->annotations_generation++;
 
   if (image_changed)
     document->image_generation++;
@@ -270,6 +272,18 @@ guint
 swash_document_get_image_generation(SwashDocument *document)
 {
   return document->image_generation;
+}
+
+guint
+swash_document_get_annotations_generation(SwashDocument *document)
+{
+  return document->annotations_generation;
+}
+
+void
+swash_document_annotations_changed(SwashDocument *document)
+{
+  document->annotations_generation++;
 }
 
 gboolean
@@ -368,6 +382,7 @@ swash_document_set_strokes(SwashDocument *document,
 {
   g_clear_pointer(&document->strokes, g_ptr_array_unref);
   document->strokes = strokes;
+  document->annotations_generation++;
 }
 
 void
@@ -375,4 +390,5 @@ swash_document_clear_annotations(SwashDocument *document)
 {
   if (document->strokes != NULL)
     g_ptr_array_set_size(document->strokes, 0);
+  document->annotations_generation++;
 }

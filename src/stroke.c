@@ -3,21 +3,6 @@
 #include <math.h>
 #include <stdint.h>
 
-static void
-swash_marker_add_rect(cairo_t *cr,
-                         double   center_x,
-                         double   center_y,
-                         double   height)
-{
-  const double width = height / 2.0;
-
-  cairo_rectangle(cr,
-                  center_x - width / 2.0,
-                  center_y - height / 2.0,
-                  width,
-                  height);
-}
-
 static uint32_t
 swash_blur_average_pixel(uint32_t sum_b,
                          uint32_t sum_g,
@@ -458,33 +443,26 @@ swash_stroke_render(cairo_t         *cr,
   }
 
   if (stroke->tool == SWASH_TOOL_MARKER) {
-    const double marker_step = MIN(2.0, MAX(1.0, stroke->width / 4.0));
+    const SwashPoint *first = &g_array_index(stroke->points, SwashPoint, 0);
 
-    swash_marker_add_rect(cr,
-                             g_array_index(stroke->points, SwashPoint, 0).x,
-                             g_array_index(stroke->points, SwashPoint, 0).y,
-                             stroke->width);
-
-    for (i = 1; i < len; i++) {
-      const SwashPoint *previous = &g_array_index(stroke->points, SwashPoint, i - 1);
-      const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, i);
-      const double dx = point->x - previous->x;
-      const double dy = point->y - previous->y;
-      const double distance = hypot(dx, dy);
-      const int steps = MAX(1, (int) ceil(distance / marker_step));
-
-      for (int step = 1; step <= steps; step++) {
-        const double t = (double) step / steps;
-
-        swash_marker_add_rect(cr,
-                                 previous->x + dx * t,
-                                 previous->y + dy * t,
-                                 stroke->width);
-      }
+    if (len == 1) {
+      cairo_rectangle(cr,
+                      first->x - stroke->width / 4.0,
+                      first->y - stroke->width / 2.0,
+                      stroke->width / 2.0,
+                      stroke->width);
+      cairo_fill(cr);
+      return;
     }
 
-    cairo_fill(cr);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_SQUARE);
+    cairo_move_to(cr, first->x, first->y);
+    for (i = 1; i < len; i++) {
+      const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, i);
 
+      cairo_line_to(cr, point->x, point->y);
+    }
+    cairo_stroke(cr);
     return;
   }
 
