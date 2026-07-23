@@ -662,104 +662,40 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkScale" id="width_scale">
-                            <property name="orientation">horizontal</property>
-                            <property name="width-request">150</property>
+                          <object class="GtkBox" id="size_segment_box">
+                            <property name="spacing">2</property>
                             <property name="valign">center</property>
-                            <property name="draw-value">False</property>
-                            <property name="adjustment">
-                              <object class="GtkAdjustment">
-                                <property name="lower">1.0</property>
-                                <property name="upper">100.0</property>
-                                <property name="value">6.0</property>
-                                <property name="step-increment">1.0</property>
-                              </object>
-                            </property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkMenuButton" id="size_button">
-                            <property name="valign">center</property>
-                            <property name="tooltip-text">Set size precisely</property>
-                            <property name="always-show-arrow">False</property>
                             <style>
-                              <class name="flat"/>
-                              <class name="size-button"/>
+                              <class name="size-segment"/>
                             </style>
-                            <property name="child">
-                              <object class="GtkLabel" id="size_button_label">
+                            <child>
+                              <object class="GtkToggleButton" id="small_size_button">
+                                <property name="label">S</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkToggleButton" id="medium_size_button">
+                                <property name="label">M</property>
+                                <property name="group">small_size_button</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkToggleButton" id="large_size_button">
+                                <property name="label">L</property>
+                                <property name="group">small_size_button</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="size_value_label">
                                 <property name="label">6 px</property>
-                                <property name="width-chars">4</property>
+                                <property name="width-chars">6</property>
                                 <property name="xalign">0.5</property>
+                                <property name="tooltip-text">Size in pixels — scroll to adjust</property>
+                                <style>
+                                  <class name="size-value"/>
+                                </style>
                               </object>
-                            </property>
-                            <property name="popover">
-                              <object class="GtkPopover">
-                                <child>
-                                  <object class="GtkBox">
-                                    <property name="orientation">vertical</property>
-                                    <property name="spacing">8</property>
-                                    <property name="margin-start">10</property>
-                                    <property name="margin-end">10</property>
-                                    <property name="margin-top">10</property>
-                                    <property name="margin-bottom">10</property>
-                                    <child>
-                                      <object class="GtkBox">
-                                        <property name="spacing">4</property>
-                                        <property name="homogeneous">True</property>
-                                        <child>
-                                          <object class="GtkButton" id="small_size_button">
-                                            <property name="label">S</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkButton" id="medium_size_button">
-                                            <property name="label">M</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkButton" id="large_size_button">
-                                            <property name="label">L</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkSpinButton" id="precise_size_spin">
-                                        <property name="hexpand">True</property>
-                                        <property name="valign">center</property>
-                                        <property name="adjustment">
-                                          <object class="GtkAdjustment">
-                                            <property name="lower">1.0</property>
-                                            <property name="upper">100.0</property>
-                                            <property name="value">6.0</property>
-                                            <property name="step-increment">1.0</property>
-                                          </object>
-                                        </property>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkButton" id="reset_size_button">
-                                        <property name="label">Reset to default</property>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                              </object>
-                            </property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkSpinButton" id="text_size_spin">
-                            <property name="valign">center</property>
-                            <property name="adjustment">
-                              <object class="GtkAdjustment">
-                                <property name="lower">8.0</property>
-                                <property name="upper">200.0</property>
-                                <property name="value">24.0</property>
-                                <property name="step-increment">1.0</property>
-                              </object>
-                            </property>
+                            </child>
                           </object>
                         </child>
                       </object>

@@ -459,6 +459,17 @@ swash_window_global_key_pressed(GtkEventControllerKey *controller,
     return TRUE;
   }
 
+  if (self->texture != NULL && !self->drawing) {
+    if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_SIZE_DECREASE, keyval, state)) {
+      swash_window_adjust_tool_size(self, -1.0);
+      return TRUE;
+    }
+    if (swash_window_shortcut_matches(self, SWASH_SHORTCUT_SIZE_INCREASE, keyval, state)) {
+      swash_window_adjust_tool_size(self, 1.0);
+      return TRUE;
+    }
+  }
+
   if (!self->drawing) {
     GtkToggleButton *target = NULL;
 

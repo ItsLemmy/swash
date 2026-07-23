@@ -18,6 +18,8 @@ typedef enum {
   SWASH_SHORTCUT_FLIP_VERTICAL,
   SWASH_SHORTCUT_PREFERENCES,
   SWASH_SHORTCUT_QUIT,
+  SWASH_SHORTCUT_SIZE_DECREASE,
+  SWASH_SHORTCUT_SIZE_INCREASE,
   SWASH_SHORTCUT_TOOL_MOVE,
   SWASH_SHORTCUT_TOOL_BRUSH,
   SWASH_SHORTCUT_TOOL_ARROW,
@@ -118,15 +120,11 @@ struct _SwashWindow {
   GtkButton *crop_apply_button;
   GtkColorDialogButton *color_button;
   GtkColorDialogButton *fill_color_button;
-  GtkScale *width_scale;
-  GtkMenuButton *size_button;
-  GtkLabel *size_button_label;
-  GtkSpinButton *text_size_spin;
-  GtkSpinButton *precise_size_spin;
-  GtkButton *small_size_button;
-  GtkButton *medium_size_button;
-  GtkButton *large_size_button;
-  GtkButton *reset_size_button;
+  GtkWidget *size_segment_box;
+  GtkToggleButton *small_size_button;
+  GtkToggleButton *medium_size_button;
+  GtkToggleButton *large_size_button;
+  GtkLabel *size_value_label;
   GtkDropDown *blur_type_dropdown;
   GtkCssProvider *window_css_provider;
   GtkCssProvider *widget_css_provider;
@@ -286,6 +284,8 @@ void swash_window_set_zoom_at(SwashWindow *self,
                                  double          viewport_x,
                                  double          viewport_y);
 void swash_window_update_size_controls(SwashWindow *self);
+void swash_window_adjust_tool_size(SwashWindow *self,
+                                      double          delta);
 void swash_window_update_tool_ui(SwashWindow *self);
 void swash_window_text_editing_commit(SwashWindow *self);
 void swash_window_queue_fit_zoom(SwashWindow *self);

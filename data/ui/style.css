@@ -59,10 +59,6 @@
   background: alpha(white, 0.08);
 }
 
-.settings-group menubutton.size-button > button {
-  padding: 0 6px;
-}
-
 .overlay-readout {
   padding: 4px;
 }
@@ -167,10 +163,38 @@
   margin: 0 4px;
 }
 
-.size-button label {
+.size-segment togglebutton {
+  min-width: 30px;
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 10px;
   color: white;
   font-weight: 600;
-  margin: 0 4px;
+  background: transparent;
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.size-segment togglebutton:hover {
+  background: alpha(white, 0.08);
+}
+
+.size-segment togglebutton:checked {
+  background: alpha(white, 0.16);
+  background-color: alpha(white, 0.16);
+  background-image: none;
+}
+
+.size-segment label.size-value {
+  color: alpha(white, 0.65);
+  font-weight: 600;
+  font-size: 12px;
+  margin: 0 2px;
+}
+
+.size-segment label.size-value.custom {
+  color: white;
 }
 
 .overlay-window-controls {

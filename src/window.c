@@ -74,6 +74,8 @@ static const SwashShortcutInfo swash_shortcut_info[SWASH_SHORTCUT_COUNT] = {
   [SWASH_SHORTCUT_FLIP_VERTICAL] = {"flip_vertical", "Flip vertical", "win.flip-vertical", "", -1},
   [SWASH_SHORTCUT_PREFERENCES] = {"preferences", "Preferences", "win.preferences", "<Primary>comma", -1},
   [SWASH_SHORTCUT_QUIT] = {"quit", "Quit", "app.quit", "<Primary>q", -1},
+  [SWASH_SHORTCUT_SIZE_DECREASE] = {"size_decrease", "Decrease tool size", NULL, "bracketleft", -1},
+  [SWASH_SHORTCUT_SIZE_INCREASE] = {"size_increase", "Increase tool size", NULL, "bracketright", -1},
   [SWASH_SHORTCUT_TOOL_MOVE] = {"tool_move", "Move", NULL, "m", SWASH_TOOL_MOVE},
   [SWASH_SHORTCUT_TOOL_BRUSH] = {"tool_brush", "Brush", NULL, "b", SWASH_TOOL_BRUSH},
   [SWASH_SHORTCUT_TOOL_ARROW] = {"tool_arrow", "Arrow", NULL, "a", SWASH_TOOL_ARROW},
@@ -1170,7 +1172,7 @@ swash_window_show_preferences(SwashWindow *self)
   adw_preferences_group_add(appearance_group, GTK_WIDGET(floating_controls_opacity_row));
   adw_preferences_group_add(shortcuts_group, GTK_WIDGET(esc_closes_window_row));
   adw_preferences_group_add(shortcuts_group, GTK_WIDGET(angle_snap_modifier_row));
-  for (int i = SWASH_SHORTCUT_OPEN; i <= SWASH_SHORTCUT_QUIT; i++)
+  for (int i = SWASH_SHORTCUT_OPEN; i < SWASH_SHORTCUT_TOOL_MOVE; i++)
     swash_window_add_shortcut_row(action_shortcuts_group, self, i);
   for (int i = SWASH_SHORTCUT_TOOL_MOVE; i < SWASH_SHORTCUT_COUNT; i++)
     swash_window_add_shortcut_row(tool_shortcuts_group, self, i);
@@ -2987,15 +2989,11 @@ swash_window_bind_template_children(GtkWidgetClass *widget_class)
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, crop_apply_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, color_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, fill_color_button);
-  gtk_widget_class_bind_template_child(widget_class, SwashWindow, width_scale);
-  gtk_widget_class_bind_template_child(widget_class, SwashWindow, size_button);
-  gtk_widget_class_bind_template_child(widget_class, SwashWindow, size_button_label);
-  gtk_widget_class_bind_template_child(widget_class, SwashWindow, text_size_spin);
-  gtk_widget_class_bind_template_child(widget_class, SwashWindow, precise_size_spin);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, size_segment_box);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, small_size_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, medium_size_button);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, large_size_button);
-  gtk_widget_class_bind_template_child(widget_class, SwashWindow, reset_size_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, size_value_label);
   gtk_widget_class_bind_template_child(widget_class, SwashWindow, blur_type_dropdown);
 }
 
@@ -3172,9 +3170,6 @@ swash_window_setup_popovers(SwashWindow *self)
   swash_window_setup_menu_button_popover(self->file_button,
                                             GTK_ARROW_UP,
                                             GTK_POS_TOP);
-  swash_window_setup_menu_button_popover(self->size_button,
-                                            GTK_ARROW_UP,
-                                            GTK_POS_TOP);
 }
 
 static void
@@ -3223,7 +3218,6 @@ swash_window_activate_tool_button(SwashWindow *self)
     gtk_toggle_button_set_active(button, TRUE);
 
   self->updating_ui = TRUE;
-  gtk_range_set_value(GTK_RANGE(self->width_scale), self->tool_widths[self->active_tool]);
   gtk_color_dialog_button_set_rgba(self->color_button, &self->tool_colors[self->active_tool]);
   gtk_color_dialog_button_set_rgba(self->fill_color_button, &self->tool_fill_colors[self->active_tool]);
   if (self->active_tool == SWASH_TOOL_BLUR)
