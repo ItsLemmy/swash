@@ -142,6 +142,14 @@ struct _SwashWindow {
   guint annotation_cache_image_generation;
   guint annotation_cache_generation;
   gboolean annotation_cache_allow_marker_overlap;
+  SwashStroke *annotation_cache_excluded;
+  GPtrArray *active_stroke_nodes;
+  guint active_stroke_baked_points;
+  SwashStroke *active_stroke_baked_stroke;
+  double active_stroke_bake_dx;
+  double active_stroke_bake_dy;
+  double active_stroke_bake_sx;
+  double active_stroke_bake_sy;
   SwashDocument *document;
   SwashStroke *current_stroke;
   double zoom;
@@ -187,6 +195,7 @@ struct _SwashWindow {
   SwashStroke *selected_stroke;
   double move_start_x;
   double move_start_y;
+  gboolean move_stroke_moved;
   gboolean text_editing;
   GtkWidget *text_input_hidden;
   guint text_cursor_blink_id;
@@ -293,4 +302,7 @@ void swash_window_drawing_area_draw(GtkDrawingArea *area,
                                        gpointer        user_data);
 GtkWidget *swash_stroke_overlay_new(SwashWindow *self);
 void swash_window_update_active_stroke_overlay(SwashWindow *self);
+void swash_window_reset_active_stroke_nodes(SwashWindow *self);
+void swash_window_annotation_cache_append_stroke(SwashWindow *self,
+                                                 SwashStroke *stroke);
 void swash_window_update_canvas_cursor(SwashWindow *self);

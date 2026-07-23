@@ -1992,6 +1992,7 @@ swash_window_refresh_image_from_document(SwashWindow *self)
     cairo_surface_destroy(self->annotation_cache);
     self->annotation_cache = NULL;
   }
+  swash_window_reset_active_stroke_nodes(self);
 
   if (!swash_document_get_image(self->document, &pixels, &width, &height, &stride)) {
     gtk_picture_set_paintable(self->picture, NULL);
@@ -2882,6 +2883,7 @@ swash_window_dispose(GObject *object)
     cairo_surface_destroy(self->annotation_cache);
     self->annotation_cache = NULL;
   }
+  swash_window_reset_active_stroke_nodes(self);
   swash_window_clear_ocr_results(self);
   swash_window_clear_annotations(self);
   if (self->copy_feedback_timeout_id != 0)

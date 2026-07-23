@@ -115,6 +115,7 @@ swash_window_cancel_current_interaction(SwashWindow *self)
     g_ptr_array_remove(strokes, self->current_stroke);
 
   self->current_stroke = NULL;
+  swash_window_reset_active_stroke_nodes(self);
   if (!self->interaction_has_undo_step) {
     gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
     return TRUE;
@@ -601,9 +602,9 @@ swash_window_erase_strokes(SwashWindow *self,
     swash_strokes_renumber(strokes);
     swash_document_annotations_changed(self->document);
     swash_window_reset_save_button(self);
+    gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
   }
 
-  gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
   return removed_stroke;
 }
 
@@ -1074,6 +1075,7 @@ swash_window_text_editing_cancel(SwashWindow *self)
     g_ptr_array_remove(strokes, self->current_stroke);
 
   self->current_stroke = NULL;
+  swash_window_reset_active_stroke_nodes(self);
   swash_document_discard_undo_step(self->document);
   swash_window_refresh_document_state(self);
   swash_window_update_history_buttons(self);
@@ -1194,6 +1196,7 @@ swash_window_draw_begin(GtkGestureDrag *gesture,
     GPtrArray *strokes = swash_window_strokes(self);
 
     self->selected_stroke = NULL;
+    self->move_stroke_moved = FALSE;
     if (strokes != NULL) {
       for (int i = (int) strokes->len - 1; i >= 0; i--) {
         SwashStroke *stroke = g_ptr_array_index(strokes, i);
@@ -1278,7 +1281,10 @@ swash_window_draw_update(GtkGestureDrag *gesture,
       const double dy = image_y - self->move_start_y;
 
       swash_stroke_offset(self->selected_stroke, dx, dy);
-      swash_document_annotations_changed(self->document);
+      /* The document is only marked changed once at drag end: bumping the
+       * annotations generation here would rebuild the full annotation cache
+       * on every motion event. */
+      self->move_stroke_moved = TRUE;
       self->move_start_x = image_x;
       self->move_start_y = image_y;
       gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
@@ -1356,6 +1362,8 @@ swash_window_draw_end(GtkGestureDrag *gesture,
     goto done;
 
   if (self->active_tool == SWASH_TOOL_MOVE) {
+    if (self->move_stroke_moved)
+      swash_document_annotations_changed(self->document);
     if (self->selected_stroke != NULL && !self->interaction_has_undo_step) {
       swash_document_discard_undo_step(self->document);
       swash_window_update_history_buttons(self);
@@ -1364,6 +1372,7 @@ swash_window_draw_end(GtkGestureDrag *gesture,
       swash_window_maybe_auto_copy_latest_change(self);
     self->selected_stroke = NULL;
     self->interaction_has_undo_step = FALSE;
+    self->move_stroke_moved = FALSE;
     gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
     goto done;
   }
@@ -1412,8 +1421,10 @@ swash_window_draw_end(GtkGestureDrag *gesture,
     self->text_cursor_blink_id = g_timeout_add(530, swash_window_text_cursor_blink, self);
   }
 
-  if (self->active_tool != SWASH_TOOL_TEXT)
+  if (self->active_tool != SWASH_TOOL_TEXT) {
     swash_document_annotations_changed(self->document);
+    swash_window_annotation_cache_append_stroke(self, self->current_stroke);
+  }
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
   if (self->active_tool != SWASH_TOOL_TEXT)
     swash_window_maybe_auto_copy_latest_change(self);
@@ -1423,6 +1434,7 @@ done:
   if (sequence != NULL && sequence == self->cancelled_touch_draw_sequence)
     self->cancelled_touch_draw_sequence = NULL;
   self->current_stroke = (self->active_tool == SWASH_TOOL_TEXT) ? self->current_stroke : NULL;
+  swash_window_reset_active_stroke_nodes(self);
   swash_window_update_active_stroke_overlay(self);
 }
 
