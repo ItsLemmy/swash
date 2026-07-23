@@ -2087,11 +2087,17 @@ swash_window_clipboard_store_ready(GObject      *source_object,
   SwashWindow *self = SWASH_WINDOW(user_data);
   g_autoptr(GError) error = NULL;
 
-  if (gdk_clipboard_store_finish(GDK_CLIPBOARD(source_object), result, &error))
-    gtk_window_destroy(GTK_WINDOW(self));
-  else
+  /* Wayland has no clipboard-manager store protocol, so storing always
+   * fails with NOT_SUPPORTED even though the content is already on the
+   * clipboard; treat it as success. */
+  if (!gdk_clipboard_store_finish(GDK_CLIPBOARD(source_object), result, &error)
+      && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
     swash_window_show_error(self, error->message);
+    g_object_unref(self);
+    return;
+  }
 
+  gtk_window_destroy(GTK_WINDOW(self));
   g_object_unref(self);
 }
 
