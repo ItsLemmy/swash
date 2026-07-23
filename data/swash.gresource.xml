@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/dev/lemmy/swash">
+    <file>ui/window.ui</file>
+    <file>ui/style.css</file>
+  </gresource>
+  <gresource prefix="/dev/lemmy/swash/icons/hicolor/scalable/actions">
+    <file alias="swash-arrow-symbolic.svg">icons/scalable/actions/swash-arrow-symbolic.svg</file>
+    <file alias="swash-blur-symbolic.svg">icons/scalable/actions/swash-blur-symbolic.svg</file>
+    <file alias="swash-circle-symbolic.svg">icons/scalable/actions/swash-circle-symbolic.svg</file>
+    <file alias="swash-crop-symbolic.svg">icons/scalable/actions/swash-crop-symbolic.svg</file>
+    <file alias="swash-document-save-symbolic.svg">icons/scalable/actions/swash-document-save-symbolic.svg</file>
+    <file alias="swash-edit-copy-symbolic.svg">icons/scalable/actions/swash-edit-copy-symbolic.svg</file>
+    <file alias="swash-edit-redo-symbolic.svg">icons/scalable/actions/swash-edit-redo-symbolic.svg</file>
+    <file alias="swash-edit-undo-symbolic.svg">icons/scalable/actions/swash-edit-undo-symbolic.svg</file>
+    <file alias="swash-eraser-symbolic.svg">icons/scalable/actions/swash-eraser-symbolic.svg</file>
+    <file alias="swash-highlight-symbolic.svg">icons/scalable/actions/swash-highlight-symbolic.svg</file>
+    <file alias="swash-image-x-generic-symbolic.svg">icons/scalable/actions/swash-image-x-generic-symbolic.svg</file>
+    <file alias="swash-line-symbolic.svg">icons/scalable/actions/swash-line-symbolic.svg</file>
+    <file alias="swash-move-symbolic.svg">icons/scalable/actions/swash-move-symbolic.svg</file>
+    <file alias="swash-numbering-symbolic.svg">icons/scalable/actions/swash-numbering-symbolic.svg</file>
+    <file alias="swash-object-flip-horizontal-symbolic.svg">icons/scalable/actions/swash-object-flip-horizontal-symbolic.svg</file>
+    <file alias="swash-object-flip-vertical-symbolic.svg">icons/scalable/actions/swash-object-flip-vertical-symbolic.svg</file>
+    <file alias="swash-object-select-symbolic.svg">icons/scalable/actions/swash-object-select-symbolic.svg</file>
+    <file alias="swash-pan-down-symbolic.svg">icons/scalable/actions/swash-pan-down-symbolic.svg</file>
+    <file alias="swash-pan-symbolic.svg">icons/scalable/actions/swash-pan-symbolic.svg</file>
+    <file alias="swash-pencil-symbolic.svg">icons/scalable/actions/swash-pencil-symbolic.svg</file>
+    <file alias="swash-rectangle-symbolic.svg">icons/scalable/actions/swash-rectangle-symbolic.svg</file>
+    <file alias="swash-rotate-counter-clockwise-symbolic.svg">icons/scalable/actions/swash-rotate-counter-clockwise-symbolic.svg</file>
+    <file alias="swash-scanner-symbolic.svg">icons/scalable/actions/swash-scanner-symbolic.svg</file>
+    <file alias="swash-shapes-symbolic.svg">icons/scalable/actions/swash-shapes-symbolic.svg</file>
+    <file alias="swash-text-symbolic.svg">icons/scalable/actions/swash-text-symbolic.svg</file>
+    <file alias="swash-view-more-symbolic.svg">icons/scalable/actions/swash-view-more-symbolic.svg</file>
+    <file alias="swash-view-refresh-symbolic.svg">icons/scalable/actions/swash-view-refresh-symbolic.svg</file>
+    <file alias="swash-zoom-in-symbolic.svg">icons/scalable/actions/swash-zoom-in-symbolic.svg</file>
+    <file alias="swash-zoom-out-symbolic.svg">icons/scalable/actions/swash-zoom-out-symbolic.svg</file>
+  </gresource>
+  <gresource prefix="/dev/lemmy/swash/icons/hicolor/128x128/apps">
+    <file alias="dev.lemmy.swash.png">icons/128x128/apps/dev.lemmy.swash.png</file>
+  </gresource>
+  <gresource prefix="/dev/lemmy/swash/icons/hicolor/256x256/apps">
+    <file alias="dev.lemmy.swash.png">icons/256x256/apps/dev.lemmy.swash.png</file>
+  </gresource>
+  <gresource prefix="/dev/lemmy/swash/icons/hicolor/512x512/apps">
+    <file alias="dev.lemmy.swash.png">icons/512x512/apps/dev.lemmy.swash.png</file>
+  </gresource>
+  <gresource prefix="/dev/lemmy/swash/icons/hicolor">
+    <file alias="index.theme">icons/index.theme</file>
+  </gresource>
+</gresources>

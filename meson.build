@@ -17,4 +17,5 @@ adw_dep = dependency('libadwaita-1', version: '>=1.6')
 cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
 
+subdir('data')
 subdir('src')

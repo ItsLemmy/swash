@@ -16,6 +16,8 @@ G_DEFINE_FINAL_TYPE(SwashWindow, swash_window, ADW_TYPE_APPLICATION_WINDOW)
 #define SWASH_SETTINGS_FILE "swash/settings.ini"
 #define SWASH_WINDOW_STYLE_PROVIDER_PRIORITY (GTK_STYLE_PROVIDER_PRIORITY_USER + 1)
 #define SWASH_RESOURCE_PREFIX "/dev/lemmy/swash"
+#define SWASH_REPOSITORY_URL "https://github.com/ItsLemmy/swash"
+#define SWASH_ISSUES_URL SWASH_REPOSITORY_URL "/issues"
 
 static void swash_window_clear_ocr_results(SwashWindow *self);
 static void swash_window_set_ocr_panel_visible(SwashWindow *self,
@@ -976,16 +978,40 @@ swash_window_show_preferences(SwashWindow *self)
 static void
 swash_window_show_about(SwashWindow *self)
 {
-  adw_show_about_dialog(GTK_WIDGET(self),
-                        "application-name", "Swash",
-                        "application-icon", "swash",
-                        "version", SWASH_VERSION,
-                        "developer-name", "Lemmy",
-                        "developers", (const char *[]) { "Lemmy", NULL },
-                        "issue-url", "https://github.com/ItsLemmy/swash/issues",
-                        "license-type", GTK_LICENSE_GPL_3_0,
-                        "website", "https://github.com/ItsLemmy/swash",
-                        NULL);
+  AdwDialog *dialog = adw_about_dialog_new();
+  AdwAboutDialog *about = ADW_ABOUT_DIALOG(dialog);
+  g_autofree char *debug_info = NULL;
+
+  debug_info = g_strdup_printf("Swash %s\nGTK %u.%u.%u\nlibadwaita %u.%u.%u",
+                               SWASH_VERSION,
+                               gtk_get_major_version(),
+                               gtk_get_minor_version(),
+                               gtk_get_micro_version(),
+                               adw_get_major_version(),
+                               adw_get_minor_version(),
+                               adw_get_micro_version());
+
+  g_object_set(about,
+               "application-name", "Swash",
+               "application-icon", "dev.lemmy.swash",
+               "comments", "A fast screenshot annotator and lightweight image editor for Linux.",
+               "copyright", "© 2026 Lemmy",
+               "debug-info", debug_info,
+               "debug-info-filename", "swash-debug-info.txt",
+               "developer-name", "Lemmy",
+               "developers", (const char *[]) { "Lemmy", NULL },
+               "issue-url", SWASH_ISSUES_URL,
+               "license-type", GTK_LICENSE_GPL_3_0,
+               "version", SWASH_VERSION,
+               "website", SWASH_REPOSITORY_URL,
+               NULL);
+
+  adw_about_dialog_add_credit_section(
+    about,
+    "Based on",
+    (const char *[]) { "Waytator by faetalize", NULL });
+
+  adw_dialog_present(dialog, GTK_WIDGET(self));
 }
 
 static void

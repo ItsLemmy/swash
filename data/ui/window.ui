@@ -73,7 +73,7 @@
 
                     <child>
                       <object class="GtkImage">
-                        <property name="icon-name">image-x-generic-symbolic</property>
+                        <property name="icon-name">swash-image-x-generic-symbolic</property>
                         <property name="pixel-size">40</property>
                         <style>
                           <class name="dim-label"/>
@@ -239,7 +239,7 @@
                               <object class="GtkButton" id="undo_button">
                                 <property name="tooltip-text">Undo</property>
                                 <property name="sensitive">False</property>
-                                <property name="icon-name">edit-undo-symbolic</property>
+                                <property name="icon-name">swash-edit-undo-symbolic</property>
                               </object>
                             </child>
 
@@ -247,7 +247,7 @@
                               <object class="GtkButton" id="redo_button">
                                 <property name="tooltip-text">Redo</property>
                                 <property name="sensitive">False</property>
-                                <property name="icon-name">edit-redo-symbolic</property>
+                                <property name="icon-name">swash-edit-redo-symbolic</property>
                               </object>
                             </child>
                           </object>
@@ -430,7 +430,7 @@
                         <child>
                           <object class="GtkButton" id="flip_horizontal_button">
                             <property name="tooltip-text">Flip horizontal</property>
-                            <property name="icon-name">object-flip-horizontal-symbolic</property>
+                            <property name="icon-name">swash-object-flip-horizontal-symbolic</property>
                             <property name="action-name">win.flip-horizontal</property>
                             <style>
                               <class name="flat"/>
@@ -441,7 +441,7 @@
                         <child>
                           <object class="GtkButton" id="flip_vertical_button">
                             <property name="tooltip-text">Flip vertical</property>
-                            <property name="icon-name">object-flip-vertical-symbolic</property>
+                            <property name="icon-name">swash-object-flip-vertical-symbolic</property>
                             <property name="action-name">win.flip-vertical</property>
                             <style>
                               <class name="flat"/>
@@ -488,13 +488,13 @@
 
                                     <child>
                                       <object class="GtkImage" id="save_default_icon">
-                                        <property name="icon-name">document-save-symbolic</property>
+                                        <property name="icon-name">swash-document-save-symbolic</property>
                                       </object>
                                     </child>
 
                                     <child>
                                       <object class="GtkImage" id="save_working_icon">
-                                        <property name="icon-name">view-refresh-symbolic</property>
+                                        <property name="icon-name">swash-view-refresh-symbolic</property>
                                         <style>
                                           <class name="spinning-icon"/>
                                         </style>
@@ -503,7 +503,7 @@
 
                                     <child>
                                       <object class="GtkImage" id="save_success_icon">
-                                        <property name="icon-name">object-select-symbolic</property>
+                                        <property name="icon-name">swash-object-select-symbolic</property>
                                       </object>
                                     </child>
                                   </object>
@@ -522,13 +522,13 @@
 
                                     <child>
                                       <object class="GtkImage" id="copy_default_icon">
-                                        <property name="icon-name">edit-copy-symbolic</property>
+                                        <property name="icon-name">swash-edit-copy-symbolic</property>
                                       </object>
                                     </child>
 
                                     <child>
                                       <object class="GtkImage" id="copy_success_icon">
-                                        <property name="icon-name">object-select-symbolic</property>
+                                        <property name="icon-name">swash-object-select-symbolic</property>
                                       </object>
                                     </child>
                                   </object>
@@ -553,7 +553,7 @@
                                 <property name="menu-model">app_menu_model</property>
                                 <property name="child">
                                   <object class="GtkImage">
-                                    <property name="icon-name">view-more-symbolic</property>
+                                    <property name="icon-name">swash-view-more-symbolic</property>
                                   </object>
                                 </property>
                                 <style>
@@ -778,7 +778,7 @@
                           <object class="GtkButton">
                             <property name="action-name">win.zoom-out</property>
                             <property name="tooltip-text">Zoom out</property>
-                            <property name="icon-name">zoom-out-symbolic</property>
+                            <property name="icon-name">swash-zoom-out-symbolic</property>
                           </object>
                         </child>
 
@@ -795,7 +795,7 @@
                           <object class="GtkButton">
                             <property name="action-name">win.zoom-in</property>
                             <property name="tooltip-text">Zoom in</property>
-                            <property name="icon-name">zoom-in-symbolic</property>
+                            <property name="icon-name">swash-zoom-in-symbolic</property>
                           </object>
                         </child>
 
@@ -840,7 +840,7 @@
 
                 <property name="end-widget">
                   <object class="GtkButton" id="ocr_panel_close_button">
-                    <property name="icon-name">pan-down-symbolic</property>
+                    <property name="icon-name">swash-pan-down-symbolic</property>
                     <property name="tooltip-text">Hide OCR panel</property>
                     <style>
                       <class name="flat"/>
