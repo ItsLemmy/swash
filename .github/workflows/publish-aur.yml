@@ -1,0 +1,111 @@
+name: Publish AUR package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, with or without the v prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to AUR
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+
+    env:
+      AUR_PACKAGE: swash
+      AUR_REPOSITORY: ssh://aur@aur.archlinux.org/swash.git
+
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed curl git openssh
+
+      - name: Resolve release version
+        id: release
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            version="${REQUESTED_VERSION#v}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: ${version}" >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Configure AUR authentication
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [[ -z "${AUR_SSH_PRIVATE_KEY}" ]]; then
+            echo "The AUR_SSH_PRIVATE_KEY repository secret is not configured" >&2
+            exit 1
+          fi
+
+          install -d -m 700 "${HOME}/.ssh"
+          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > "${HOME}/.ssh/aur"
+          chmod 600 "${HOME}/.ssh/aur"
+          ssh-keyscan -H aur.archlinux.org > "${HOME}/.ssh/known_hosts"
+          printf '%s\n' \
+            "Host aur.archlinux.org" \
+            "  User aur" \
+            "  IdentityFile ~/.ssh/aur" \
+            "  IdentitiesOnly yes" \
+            > "${HOME}/.ssh/config"
+          chmod 600 "${HOME}/.ssh/config"
+
+      - name: Update and publish package
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          archive="${AUR_PACKAGE}-${VERSION}.tar.gz"
+          source_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${VERSION}.tar.gz"
+
+          curl --fail --location --output "/tmp/${archive}" "${source_url}"
+          checksum="$(sha256sum "/tmp/${archive}" | cut -d ' ' -f 1)"
+
+          tar -xOf "/tmp/${archive}" "${AUR_PACKAGE}-${VERSION}/meson.build" \
+            | grep -F "version: '${VERSION}'"
+
+          git clone "${AUR_REPOSITORY}" aur
+          sed -Ei \
+            -e "s/^pkgver=.*/pkgver=${VERSION}/" \
+            -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums=.*/sha256sums=('${checksum}')/" \
+            aur/PKGBUILD
+
+          useradd --create-home builder
+          install -d -o builder -g builder /home/builder/package
+          cp aur/PKGBUILD /home/builder/package/PKGBUILD
+          chown builder:builder /home/builder/package/PKGBUILD
+          runuser -u builder -- bash -lc \
+            "cd /home/builder/package && makepkg --printsrcinfo" \
+            > aur/.SRCINFO
+
+          if git -C aur diff --quiet; then
+            echo "${AUR_PACKAGE} ${VERSION}-1 is already current"
+            exit 0
+          fi
+
+          git -C aur config user.name "Lemmy"
+          git -C aur config user.email "studio@quadbyte.net"
+          git -C aur add PKGBUILD .SRCINFO
+          git -C aur commit -m "update to ${VERSION}"
+          git -C aur push origin master
