@@ -1,10 +1,10 @@
-#include "waytator-window-private.h"
+#include "window-private.h"
 
-#include "waytator-render.h"
-#include "waytator-stroke.h"
+#include "render.h"
+#include "stroke.h"
 
 static void
-waytator_window_draw_eraser_dual_ring(cairo_t *cr,
+swash_window_draw_eraser_dual_ring(cairo_t *cr,
                                       double   x,
                                       double   y,
                                       double   radius,
@@ -23,7 +23,7 @@ waytator_window_draw_eraser_dual_ring(cairo_t *cr,
 }
 
 static void
-waytator_window_draw_eraser_dashed_ring(cairo_t *cr,
+swash_window_draw_eraser_dashed_ring(cairo_t *cr,
                                         double   x,
                                         double   y,
                                         double   radius,
@@ -44,7 +44,7 @@ waytator_window_draw_eraser_dashed_ring(cairo_t *cr,
 }
 
 static void
-waytator_window_draw_eraser_pattern(cairo_t *cr,
+swash_window_draw_eraser_pattern(cairo_t *cr,
                                     double   x,
                                     double   y,
                                     double   radius,
@@ -70,33 +70,33 @@ waytator_window_draw_eraser_pattern(cairo_t *cr,
 }
 
 static void
-waytator_window_draw_eraser_preview(WaytatorWindow *self,
+swash_window_draw_eraser_preview(SwashWindow *self,
                                     cairo_t        *cr,
                                     double          scale,
                                     double          radius)
 {
   switch (self->eraser_style) {
-  case WAYTATOR_ERASER_STYLE_DASHED_RING:
-    waytator_window_draw_eraser_dashed_ring(cr, self->pointer_x, self->pointer_y, radius, scale);
+  case SWASH_ERASER_STYLE_DASHED_RING:
+    swash_window_draw_eraser_dashed_ring(cr, self->pointer_x, self->pointer_y, radius, scale);
     break;
-  case WAYTATOR_ERASER_STYLE_PATTERN:
-    waytator_window_draw_eraser_pattern(cr, self->pointer_x, self->pointer_y, radius, scale);
+  case SWASH_ERASER_STYLE_PATTERN:
+    swash_window_draw_eraser_pattern(cr, self->pointer_x, self->pointer_y, radius, scale);
     break;
-  case WAYTATOR_ERASER_STYLE_DUAL_RING:
+  case SWASH_ERASER_STYLE_DUAL_RING:
   default:
-    waytator_window_draw_eraser_dual_ring(cr, self->pointer_x, self->pointer_y, radius, scale);
+    swash_window_draw_eraser_dual_ring(cr, self->pointer_x, self->pointer_y, radius, scale);
     break;
   }
 }
 
 void
-waytator_window_drawing_area_draw(GtkDrawingArea *area,
+swash_window_drawing_area_draw(GtkDrawingArea *area,
                                   cairo_t        *cr,
                                   int             width,
                                   int             height,
                                   gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   const int image_width = self->texture != NULL
                         ? gdk_paintable_get_intrinsic_width(GDK_PAINTABLE(self->texture))
                         : 0;
@@ -107,13 +107,13 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
   double display_y;
   double display_width;
   double display_height;
-  GPtrArray *strokes = waytator_window_strokes(self);
+  GPtrArray *strokes = swash_window_strokes(self);
   (void) area;
 
   if (strokes == NULL || width <= 0 || height <= 0 || image_width <= 0 || image_height <= 0)
     return;
 
-  if (!waytator_window_get_display_rect(self,
+  if (!swash_window_get_display_rect(self,
                                         width,
                                         height,
                                         &display_x,
@@ -127,18 +127,18 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
   cairo_clip(cr);
   cairo_translate(cr, display_x, display_y);
   cairo_scale(cr, display_width / image_width, display_height / image_height);
-  waytator_render_strokes(cr,
+  swash_render_strokes(cr,
                           strokes,
                           self->image_surface,
                           self->allow_highlighter_overlap,
-                          waytator_stroke_render,
-                          waytator_document_get_image_generation(self->document));
+                          swash_stroke_render,
+                          swash_document_get_image_generation(self->document));
 
-  if (self->active_tool == WAYTATOR_TOOL_MOVE && self->selected_stroke != NULL) {
+  if (self->active_tool == SWASH_TOOL_MOVE && self->selected_stroke != NULL) {
     double bx, by, bw, bh;
     const double dash[] = { 6.0 / (display_width / image_width), 4.0 / (display_width / image_width) };
 
-    waytator_stroke_get_bounds(self->selected_stroke, &bx, &by, &bw, &bh);
+    swash_stroke_get_bounds(self->selected_stroke, &bx, &by, &bw, &bh);
     cairo_set_dash(cr, dash, G_N_ELEMENTS(dash), 0.0);
     cairo_set_line_width(cr, 1.5 / (display_width / image_width));
     cairo_rectangle(cr, bx - 2.0, by - 2.0, bw + 4.0, bh + 4.0);
@@ -152,7 +152,7 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
 
   if (self->text_editing && self->text_cursor_visible && self->current_stroke != NULL
       && self->current_stroke->points->len >= 1) {
-    const WaytatorPoint *p = &g_array_index(self->current_stroke->points, WaytatorPoint, 0);
+    const SwashPoint *p = &g_array_index(self->current_stroke->points, SwashPoint, 0);
     cairo_text_extents_t extents = {0};
     cairo_font_extents_t font_ext;
     double cursor_x;
@@ -180,7 +180,7 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
 
   cairo_restore(cr);
 
-  if (self->active_tool == WAYTATOR_TOOL_CROP && self->drawing) {
+  if (self->active_tool == SWASH_TOOL_CROP && self->drawing) {
     const double crop_left = MIN(self->crop_start_x, self->crop_end_x);
     const double crop_top = MIN(self->crop_start_y, self->crop_end_y);
     const double crop_width = fabs(self->crop_end_x - self->crop_start_x);
@@ -209,9 +209,9 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
   }
 
   if (self->pointer_in
-      && (!self->drawing || self->active_tool == WAYTATOR_TOOL_ERASER)
+      && (!self->drawing || self->active_tool == SWASH_TOOL_ERASER)
       && !self->text_editing
-      && !waytator_tool_is_non_drawing(self->active_tool)) {
+      && !swash_tool_is_non_drawing(self->active_tool)) {
     cairo_save(cr);
     cairo_rectangle(cr, display_x, display_y, display_width, display_height);
     cairo_clip(cr);
@@ -222,16 +222,16 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
     GdkRGBA tool_color = self->tool_colors[self->active_tool];
     const double scale = display_width / image_width;
 
-    if (self->active_tool == WAYTATOR_TOOL_TEXT) {
+    if (self->active_tool == SWASH_TOOL_TEXT) {
       cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
       cairo_set_font_size(cr, tool_width);
       cairo_move_to(cr, self->pointer_x, self->pointer_y);
       cairo_set_source_rgba(cr, tool_color.red, tool_color.green, tool_color.blue, tool_color.alpha);
       cairo_show_text(cr, "T");
     } else {
-      if (self->active_tool == WAYTATOR_TOOL_ERASER) {
-        waytator_window_draw_eraser_preview(self, cr, scale, tool_width / 2.0);
-      } else if (self->active_tool == WAYTATOR_TOOL_MARKER) {
+      if (self->active_tool == SWASH_TOOL_ERASER) {
+        swash_window_draw_eraser_preview(self, cr, scale, tool_width / 2.0);
+      } else if (self->active_tool == SWASH_TOOL_MARKER) {
         cairo_rectangle(cr,
                         self->pointer_x - tool_width / 4.0,
                         self->pointer_y - tool_width / 2.0,
@@ -239,7 +239,7 @@ waytator_window_drawing_area_draw(GtkDrawingArea *area,
                         tool_width);
         cairo_set_source_rgba(cr, tool_color.red, tool_color.green, tool_color.blue, 0.45);
         cairo_fill(cr);
-      } else if (self->active_tool == WAYTATOR_TOOL_BLUR) {
+      } else if (self->active_tool == SWASH_TOOL_BLUR) {
         cairo_arc(cr, self->pointer_x, self->pointer_y, tool_width / 2.0, 0.0, 2.0 * G_PI);
         cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.6);
         cairo_fill(cr);

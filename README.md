@@ -1,117 +1,88 @@
-# waytator
+# Swash
 
-`waytator` is a screenshot annotator and lightweight image editor
+Swash is a fast screenshot annotator and lightweight image editor for Linux,
+built with GTK 4 and libadwaita.
 
-`niri` user? Check below on how to integrate niri screenshots with this tool
-
-<p  align="center">
-<img width="600" alt="Screenshot from 2026-04-19 03-04-52" src="https://github.com/user-attachments/assets/4bcc1c58-5834-4f35-877b-5f94a914d6ce" />
+<p align="center">
+  <img width="600" alt="Swash editing a screenshot" src="https://github.com/user-attachments/assets/4bcc1c58-5834-4f35-877b-5f94a914d6ce" />
 </p>
-<p  align="center">
-<img width="600" alt="image" src="https://github.com/user-attachments/assets/91c949f3-f106-433f-a1d6-62742a72831d" />
+<p align="center">
+  <img width="600" alt="Swash annotation tools" src="https://github.com/user-attachments/assets/91c949f3-f106-433f-a1d6-62742a72831d" />
 </p>
 
-## Build & Install
+## Features
 
-### Arch
+- Freehand drawing, highlighting, text, arrows, shapes, and numbered markers
+- Cropping, rotation, flipping, blurring, and annotation erasing
+- Moveable annotations with configurable colors, fills, and sizes
+- Undo and redo history
+- OCR text recognition through Tesseract
+- Copy to the clipboard or save to a file
+- Open image files or read image data from standard input
 
-Get it from the AUR:
+## Installation
+
+### Arch Linux
+
+Install Swash from the AUR:
 
 ```bash
-yay -S waytator
+yay -S swash
 ```
 
-### From source
+### Build from source
 
-1) Required build dependencies:
+Required dependencies:
 
-- `meson`
-- `ninja`
-- `pkg-config`
-- `gtk4`
-- `libadwaita-1`
-- a C compiler such as `gcc` or `clang`
+- Meson
+- Ninja
+- pkg-config
+- GTK 4
+- libadwaita 1.6 or newer
+- A C compiler such as GCC or Clang
 
-2) Recommended runtime dependency:
+Tesseract is optional and enables OCR support.
 
-- `tesseract` for OCR support
-- `wl-clipboard` for niri screenshot clipboard support
-
-3) Install into `~/.local`:
+Configure, build, and install Swash into `/usr/local`:
 
 ```bash
-meson setup build --buildtype=release --prefix="$HOME/.local" # Override the prefix if needed
+meson setup build --buildtype=release
 meson compile -C build
-meson install -C build
+sudo meson install -C build
 ```
 
-This installs:
-
-- the `waytator` binary to `${HOME}/.local/bin/waytator`
-- the desktop entry to `${HOME}/.local/share/applications/dev.faetalize.waytator.desktop`
-- the app icon to `${HOME}/.local/share/icons/hicolor/scalable/apps/dev.faetalize.waytator.svg`
-
-The app's identifier is `dev.faetalize.waytator` for concerns such as the desktop entry and icon, so if you have an older version of the app installed with a different identifier (e.g. `dev.waytator.Waytator`), make sure to remove it first to avoid conflicts.
-
-
-If `~/.local/bin` is not already on your `PATH`, add it in your shell profile. For example, add the following line to `~/.bashrc`:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-If launchers fail to start `waytator` after installing from source, make sure your graphical session includes `~/.local/bin` in `PATH`, not just your shell configuration.
+The application ID is `dev.lemmy.swash`.
 
 ## Usage
 
-Read from stdin automatically when image data is piped in:
+Launch Swash without an image:
 
 ```bash
-grim -g "$(slurp)" - | waytator
-```
-
-Or pass stdin explicitly:
-
-```bash
-grim -g "$(slurp)" - | waytator --stdin
-```
-
-Set the default display/save-as name for stdin images:
-
-```bash
-grim -g "$(slurp)" - | waytator --stdin --name "Screenshot.png"
+swash
 ```
 
 Open an existing image:
 
 ```bash
-waytator path/to/image.png
+swash path/to/image.png
 ```
 
-It can also be run independently:
+Pipe image data directly into Swash:
 
 ```bash
-waytator
+grim -g "$(slurp)" - | swash
 ```
 
-If you're on niri, just bind your screenshot keybind to `./scripts/screenshot-to-waytator.sh`, this will automatically open screenshots into `waytator` after they are captured for editing. Saving from niri's screenshot UI opens the saved file; pressing `Ctrl+C` in the screenshot UI opens the copied image directly from the clipboard. Clipboard captures use a timestamped name by default; override it with `WAYTATOR_SCREENSHOT_NAME`.
+Use `--stdin` explicitly and set the suggested filename for saving:
 
-```kdl
-// in your config.kdl, in the binds section
-Print { spawn <path-to-screenshot-to-waytator.sh>; }
-Mod+Shift+S { spawn <path-to-screenshot-to-waytator.sh>; }
+```bash
+grim -g "$(slurp)" - | swash --stdin --name "Screenshot.png"
 ```
 
-I recommend adding a window rule to float `waytator` windows for better experience, for example with `niri`:
+## Acknowledgements
 
-```kdl
-// in your config.kdl
-window-rule {
-    match app-id=r#"^dev\.faetalize\.waytator$"#
-    open-floating true
-}
-```
+Swash is a fork of [Waytator](https://github.com/faetalize/waytator).
 
 ## License
 
-GPL-3.0-or-later.
+Swash is licensed under the [GNU General Public License v3.0 or later](LICENSE).

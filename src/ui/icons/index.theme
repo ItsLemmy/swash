@@ -1,6 +1,6 @@
 [Icon Theme]
-Name=Waytator Hicolor
-Comment=Bundled symbolic icons for Waytator
+Name=Swash Hicolor
+Comment=Bundled symbolic icons for Swash
 Directories=scalable/actions,128x128/apps,256x256/apps,512x512/apps
 
 [scalable/actions]

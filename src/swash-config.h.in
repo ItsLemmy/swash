@@ -1,0 +1,3 @@
+#pragma once
+
+#define SWASH_VERSION @SWASH_VERSION@

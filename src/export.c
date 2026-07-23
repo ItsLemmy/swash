@@ -1,9 +1,9 @@
-#include "waytator-export.h"
+#include "export.h"
 
-#include "waytator-render.h"
+#include "render.h"
 
 static const char *
-waytator_export_format_from_path(const char *path)
+swash_export_format_from_path(const char *path)
 {
   const char *dot = strrchr(path, '.');
 
@@ -26,13 +26,13 @@ waytator_export_format_from_path(const char *path)
 }
 
 static const char *
-waytator_export_copy_mime_type(const char *format)
+swash_export_copy_mime_type(const char *format)
 {
   return g_strcmp0(format, "jpeg") == 0 ? "image/jpeg" : "image/png";
 }
 
 static void
-waytator_export_options(const char  *format,
+swash_export_options(const char  *format,
                         char       **option_keys,
                         char       **option_values)
 {
@@ -51,8 +51,64 @@ waytator_export_options(const char  *format,
   }
 }
 
+static guchar
+swash_export_unpremultiply(guchar color,
+                           guchar alpha)
+{
+  if (alpha == 0)
+    return 0;
+
+  return MIN(255, (color * 255 + alpha / 2) / alpha);
+}
+
 static GdkPixbuf *
-waytator_export_prepare_pixbuf_for_format(GdkPixbuf  *pixbuf,
+swash_export_pixbuf_from_surface(cairo_surface_t *surface)
+{
+  GdkPixbuf *pixbuf;
+  const guchar *src_pixels;
+  guchar *dst_pixels;
+  int width;
+  int height;
+  int src_stride;
+  int y;
+
+  if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS
+      || cairo_surface_get_type(surface) != CAIRO_SURFACE_TYPE_IMAGE
+      || cairo_image_surface_get_format(surface) != CAIRO_FORMAT_ARGB32)
+    return NULL;
+
+  width = cairo_image_surface_get_width(surface);
+  height = cairo_image_surface_get_height(surface);
+  src_stride = cairo_image_surface_get_stride(surface);
+  pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, width, height);
+  if (pixbuf == NULL)
+    return NULL;
+
+  cairo_surface_flush(surface);
+  src_pixels = cairo_image_surface_get_data(surface);
+  dst_pixels = gdk_pixbuf_get_pixels(pixbuf);
+
+  for (y = 0; y < height; y++) {
+    const guint32 *src = (const guint32 *) (src_pixels + y * src_stride);
+    guchar *dst = dst_pixels + y * gdk_pixbuf_get_rowstride(pixbuf);
+    int x;
+
+    for (x = 0; x < width; x++) {
+      const guint32 pixel = src[x];
+      const guchar alpha = pixel >> 24;
+
+      dst[x * 4] = swash_export_unpremultiply((pixel >> 16) & 0xff, alpha);
+      dst[x * 4 + 1] = swash_export_unpremultiply((pixel >> 8) & 0xff, alpha);
+      dst[x * 4 + 2] = swash_export_unpremultiply(pixel & 0xff, alpha);
+      dst[x * 4 + 3] = alpha;
+    }
+  }
+
+  return pixbuf;
+}
+
+static GdkPixbuf *
+swash_export_prepare_pixbuf_for_format(GdkPixbuf  *pixbuf,
                                           const char *format)
 {
   GdkPixbuf *flattened;
@@ -87,20 +143,20 @@ waytator_export_prepare_pixbuf_for_format(GdkPixbuf  *pixbuf,
   return flattened;
 }
 
-WaytatorExportRequest *
-waytator_export_request_new(GdkTexture              *texture,
+SwashExportRequest *
+swash_export_request_new(GdkTexture              *texture,
                             GPtrArray               *strokes,
-                            WaytatorExportKind       kind,
+                            SwashExportKind       kind,
                             GFile                   *file,
                              const char              *copy_format,
-                             WaytatorStrokeCopyFunc   copy_stroke,
+                             SwashStrokeCopyFunc   copy_stroke,
                              GDestroyNotify           stroke_free,
                              gboolean                 allow_marker_overlap,
-                             WaytatorStrokeRenderFunc render_stroke,
+                             SwashStrokeRenderFunc render_stroke,
                              guint                    image_generation,
                              GError                 **error)
 {
-  WaytatorExportRequest *request;
+  SwashExportRequest *request;
   const int width = texture != NULL ? gdk_texture_get_width(texture) : 0;
   const int height = texture != NULL ? gdk_texture_get_height(texture) : 0;
   guint i;
@@ -113,7 +169,7 @@ waytator_export_request_new(GdkTexture              *texture,
     return NULL;
   }
 
-  request = g_new0(WaytatorExportRequest, 1);
+  request = g_new0(SwashExportRequest, 1);
   request->kind = kind;
   request->width = width;
   request->height = height;
@@ -134,14 +190,14 @@ waytator_export_request_new(GdkTexture              *texture,
   if (file != NULL)
     request->file = g_object_ref(file);
 
-  if (kind == WAYTATOR_EXPORT_COPY)
+  if (kind == SWASH_EXPORT_COPY)
     request->copy_format = g_strdup(copy_format != NULL ? copy_format : "png");
 
   return request;
 }
 
 void
-waytator_export_request_free(WaytatorExportRequest *request)
+swash_export_request_free(SwashExportRequest *request)
 {
   if (request == NULL)
     return;
@@ -154,7 +210,7 @@ waytator_export_request_free(WaytatorExportRequest *request)
 }
 
 void
-waytator_copy_result_free(WaytatorCopyResult *result)
+swash_copy_result_free(SwashCopyResult *result)
 {
   if (result == NULL)
     return;
@@ -165,12 +221,12 @@ waytator_copy_result_free(WaytatorCopyResult *result)
 }
 
 void
-waytator_export_run_task(GTask        *task,
+swash_export_run_task(GTask        *task,
                          gpointer      source_object,
                          gpointer      task_data,
                          GCancellable *cancellable)
 {
-  WaytatorExportRequest *request = task_data;
+  SwashExportRequest *request = task_data;
   cairo_surface_t *surface;
   cairo_t *cr;
 
@@ -183,7 +239,7 @@ waytator_export_run_task(GTask        *task,
                                                 request->height,
                                                 request->stride);
   cr = cairo_create(surface);
-  waytator_render_strokes(cr,
+  swash_render_strokes(cr,
                           request->strokes,
                           surface,
                           request->allow_marker_overlap,
@@ -192,7 +248,7 @@ waytator_export_run_task(GTask        *task,
   cairo_destroy(cr);
   cairo_surface_flush(surface);
 
-  if (request->kind == WAYTATOR_EXPORT_COPY) {
+  if (request->kind == SWASH_EXPORT_COPY) {
     g_autoptr(GdkPixbuf) pixbuf = NULL;
     g_autoptr(GdkPixbuf) encoded_pixbuf = NULL;
     g_autoptr(GBytes) texture_bytes = NULL;
@@ -201,9 +257,9 @@ waytator_export_run_task(GTask        *task,
     gsize length = 0;
     char *option_keys[] = { NULL, NULL };
     char *option_values[] = { NULL, NULL };
-    WaytatorCopyResult *result = g_new0(WaytatorCopyResult, 1);
+    SwashCopyResult *result = g_new0(SwashCopyResult, 1);
 
-    pixbuf = gdk_pixbuf_get_from_surface(surface, 0, 0, request->width, request->height);
+    pixbuf = swash_export_pixbuf_from_surface(surface);
     cairo_surface_destroy(surface);
 
     if (pixbuf == NULL) {
@@ -222,8 +278,8 @@ waytator_export_run_task(GTask        *task,
                                              texture_bytes,
                                              request->stride);
 
-    waytator_export_options(request->copy_format, option_keys, option_values);
-    encoded_pixbuf = waytator_export_prepare_pixbuf_for_format(pixbuf, request->copy_format);
+    swash_export_options(request->copy_format, option_keys, option_values);
+    encoded_pixbuf = swash_export_prepare_pixbuf_for_format(pixbuf, request->copy_format);
     if (encoded_pixbuf == NULL) {
       g_free(result);
       g_task_return_new_error(task,
@@ -245,9 +301,9 @@ waytator_export_run_task(GTask        *task,
       return;
     }
 
-    result->mime_type = waytator_export_copy_mime_type(request->copy_format);
+    result->mime_type = swash_export_copy_mime_type(request->copy_format);
     result->bytes = g_bytes_new_take(buffer, length);
-    g_task_return_pointer(task, result, (GDestroyNotify) waytator_copy_result_free);
+    g_task_return_pointer(task, result, (GDestroyNotify) swash_copy_result_free);
     return;
   }
 
@@ -268,7 +324,7 @@ waytator_export_run_task(GTask        *task,
     return;
   }
 
-  pixbuf = gdk_pixbuf_get_from_surface(surface, 0, 0, request->width, request->height);
+  pixbuf = swash_export_pixbuf_from_surface(surface);
   cairo_surface_destroy(surface);
 
   if (pixbuf == NULL) {
@@ -279,9 +335,9 @@ waytator_export_run_task(GTask        *task,
     return;
   }
 
-  format = waytator_export_format_from_path(path);
-  waytator_export_options(format, option_keys, option_values);
-  encoded_pixbuf = waytator_export_prepare_pixbuf_for_format(pixbuf, format);
+  format = swash_export_format_from_path(path);
+  swash_export_options(format, option_keys, option_values);
+  encoded_pixbuf = swash_export_prepare_pixbuf_for_format(pixbuf, format);
 
   if (encoded_pixbuf == NULL) {
     g_task_return_new_error(task,

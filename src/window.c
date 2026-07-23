@@ -1,121 +1,121 @@
-#include "waytator-window.h"
-#include "waytator-window-private.h"
-#include "waytator-config.h"
+#include "window.h"
+#include "window-private.h"
+#include "swash-config.h"
 
-#include "waytator-export.h"
-#include "waytator-ocr.h"
-#include "waytator-render.h"
-#include "waytator-stroke.h"
+#include "export.h"
+#include "ocr.h"
+#include "render.h"
+#include "stroke.h"
 
 #include <cairo.h>
 #include <string.h>
 
-G_DEFINE_FINAL_TYPE(WaytatorWindow, waytator_window, ADW_TYPE_APPLICATION_WINDOW)
+G_DEFINE_FINAL_TYPE(SwashWindow, swash_window, ADW_TYPE_APPLICATION_WINDOW)
 
-#define WAYTATOR_SETTINGS_GROUP "preferences"
-#define WAYTATOR_SETTINGS_FILE "waytator/settings.ini"
-#define WAYTATOR_WINDOW_STYLE_PROVIDER_PRIORITY (GTK_STYLE_PROVIDER_PRIORITY_USER + 1)
-#define WAYTATOR_RESOURCE_PREFIX "/dev/faetalize/waytator"
+#define SWASH_SETTINGS_GROUP "preferences"
+#define SWASH_SETTINGS_FILE "swash/settings.ini"
+#define SWASH_WINDOW_STYLE_PROVIDER_PRIORITY (GTK_STYLE_PROVIDER_PRIORITY_USER + 1)
+#define SWASH_RESOURCE_PREFIX "/dev/lemmy/swash"
 
-static void waytator_window_clear_ocr_results(WaytatorWindow *self);
-static void waytator_window_set_ocr_panel_visible(WaytatorWindow *self,
+static void swash_window_clear_ocr_results(SwashWindow *self);
+static void swash_window_set_ocr_panel_visible(SwashWindow *self,
                                                   gboolean        visible);
-static void waytator_window_ocr_panel_open_changed(GObject    *object,
+static void swash_window_ocr_panel_open_changed(GObject    *object,
                                                    GParamSpec *pspec,
                                                    gpointer    user_data);
-static void waytator_window_show_error(WaytatorWindow *self,
+static void swash_window_show_error(SwashWindow *self,
                                        const char     *message);
-static gboolean waytator_window_has_unsaved_changes(WaytatorWindow *self);
-static void waytator_window_copy_export_ready(GObject      *source_object,
+static gboolean swash_window_has_unsaved_changes(SwashWindow *self);
+static void swash_window_copy_export_ready(GObject      *source_object,
                                               GAsyncResult *result,
                                               gpointer      user_data);
-static gboolean waytator_window_parse_accelerator(const char       *accelerator,
+static gboolean swash_window_parse_accelerator(const char       *accelerator,
                                                   guint            *keyval,
                                                   GdkModifierType  *modifiers);
-static void waytator_window_apply_copy_shortcut(WaytatorWindow *self,
+static void swash_window_apply_copy_shortcut(SwashWindow *self,
                                                 const char     *accelerator);
-static void waytator_window_update_shortcut_label(GtkShortcutLabel *label,
+static void swash_window_update_shortcut_label(GtkShortcutLabel *label,
                                                   const char       *accelerator);
-static const char *waytator_window_angle_snap_modifier_label(GdkModifierType modifiers);
-static void waytator_window_highlighter_overlap_changed(AdwSwitchRow   *row,
+static const char *swash_window_angle_snap_modifier_label(GdkModifierType modifiers);
+static void swash_window_highlighter_overlap_changed(AdwSwitchRow   *row,
                                                         GParamSpec     *pspec,
-                                                        WaytatorWindow *self);
-static void waytator_window_update_window_controls(WaytatorWindow *self);
-static void waytator_window_update_window_background(WaytatorWindow *self);
-static void waytator_window_update_widget_appearance(WaytatorWindow *self);
-static void waytator_window_save_preferences(WaytatorWindow *self);
+                                                        SwashWindow *self);
+static void swash_window_update_window_controls(SwashWindow *self);
+static void swash_window_update_window_background(SwashWindow *self);
+static void swash_window_update_widget_appearance(SwashWindow *self);
+static void swash_window_save_preferences(SwashWindow *self);
 
-#define WAYTATOR_STATE_GROUP "state"
+#define SWASH_STATE_GROUP "state"
 
 static const char *
-waytator_tool_key_name(WaytatorTool tool)
+swash_tool_key_name(SwashTool tool)
 {
   switch (tool) {
-  case WAYTATOR_TOOL_PAN:       return "pan";
-  case WAYTATOR_TOOL_CROP:      return "crop";
-  case WAYTATOR_TOOL_BRUSH:     return "brush";
-  case WAYTATOR_TOOL_MARKER:    return "marker";
-  case WAYTATOR_TOOL_ERASER:    return "eraser";
-  case WAYTATOR_TOOL_RECTANGLE: return "rectangle";
-  case WAYTATOR_TOOL_CIRCLE:    return "circle";
-  case WAYTATOR_TOOL_LINE:      return "line";
-  case WAYTATOR_TOOL_ARROW:     return "arrow";
-  case WAYTATOR_TOOL_OCR:       return "ocr";
-  case WAYTATOR_TOOL_TEXT:      return "text";
-  case WAYTATOR_TOOL_BLUR:      return "blur";
-  case WAYTATOR_TOOL_NUMBERING: return "numbering";
-  case WAYTATOR_TOOL_MOVE:      return "move";
+  case SWASH_TOOL_PAN:       return "pan";
+  case SWASH_TOOL_CROP:      return "crop";
+  case SWASH_TOOL_BRUSH:     return "brush";
+  case SWASH_TOOL_MARKER:    return "marker";
+  case SWASH_TOOL_ERASER:    return "eraser";
+  case SWASH_TOOL_RECTANGLE: return "rectangle";
+  case SWASH_TOOL_CIRCLE:    return "circle";
+  case SWASH_TOOL_LINE:      return "line";
+  case SWASH_TOOL_ARROW:     return "arrow";
+  case SWASH_TOOL_OCR:       return "ocr";
+  case SWASH_TOOL_TEXT:      return "text";
+  case SWASH_TOOL_BLUR:      return "blur";
+  case SWASH_TOOL_NUMBERING: return "numbering";
+  case SWASH_TOOL_MOVE:      return "move";
   default:                      return "brush";
   }
 }
 
-static WaytatorTool
-waytator_tool_from_key_name(const char *name)
+static SwashTool
+swash_tool_from_key_name(const char *name)
 {
-  if (name == NULL)                         return WAYTATOR_TOOL_BRUSH;
-  if (g_strcmp0(name, "pan") == 0)          return WAYTATOR_TOOL_PAN;
-  if (g_strcmp0(name, "crop") == 0)         return WAYTATOR_TOOL_CROP;
-  if (g_strcmp0(name, "brush") == 0)        return WAYTATOR_TOOL_BRUSH;
-  if (g_strcmp0(name, "marker") == 0)       return WAYTATOR_TOOL_MARKER;
-  if (g_strcmp0(name, "eraser") == 0)       return WAYTATOR_TOOL_ERASER;
-  if (g_strcmp0(name, "rectangle") == 0)    return WAYTATOR_TOOL_RECTANGLE;
-  if (g_strcmp0(name, "circle") == 0)       return WAYTATOR_TOOL_CIRCLE;
-  if (g_strcmp0(name, "line") == 0)         return WAYTATOR_TOOL_LINE;
-  if (g_strcmp0(name, "arrow") == 0)        return WAYTATOR_TOOL_ARROW;
-  if (g_strcmp0(name, "ocr") == 0)          return WAYTATOR_TOOL_OCR;
-  if (g_strcmp0(name, "text") == 0)         return WAYTATOR_TOOL_TEXT;
-  if (g_strcmp0(name, "blur") == 0)         return WAYTATOR_TOOL_BLUR;
-  if (g_strcmp0(name, "numbering") == 0)   return WAYTATOR_TOOL_NUMBERING;
-  if (g_strcmp0(name, "move") == 0)         return WAYTATOR_TOOL_MOVE;
-  return WAYTATOR_TOOL_BRUSH;
+  if (name == NULL)                         return SWASH_TOOL_BRUSH;
+  if (g_strcmp0(name, "pan") == 0)          return SWASH_TOOL_PAN;
+  if (g_strcmp0(name, "crop") == 0)         return SWASH_TOOL_CROP;
+  if (g_strcmp0(name, "brush") == 0)        return SWASH_TOOL_BRUSH;
+  if (g_strcmp0(name, "marker") == 0)       return SWASH_TOOL_MARKER;
+  if (g_strcmp0(name, "eraser") == 0)       return SWASH_TOOL_ERASER;
+  if (g_strcmp0(name, "rectangle") == 0)    return SWASH_TOOL_RECTANGLE;
+  if (g_strcmp0(name, "circle") == 0)       return SWASH_TOOL_CIRCLE;
+  if (g_strcmp0(name, "line") == 0)         return SWASH_TOOL_LINE;
+  if (g_strcmp0(name, "arrow") == 0)        return SWASH_TOOL_ARROW;
+  if (g_strcmp0(name, "ocr") == 0)          return SWASH_TOOL_OCR;
+  if (g_strcmp0(name, "text") == 0)         return SWASH_TOOL_TEXT;
+  if (g_strcmp0(name, "blur") == 0)         return SWASH_TOOL_BLUR;
+  if (g_strcmp0(name, "numbering") == 0)   return SWASH_TOOL_NUMBERING;
+  if (g_strcmp0(name, "move") == 0)         return SWASH_TOOL_MOVE;
+  return SWASH_TOOL_BRUSH;
 }
 
 static void
-waytator_window_apply_default_tool_colors(WaytatorWindow *self)
+swash_window_apply_default_tool_colors(SwashWindow *self)
 {
   const GdkRGBA primary = { 0.96, 0.2, 0.28, 1.0 };
   const GdkRGBA highlighter = { 1.0, 0.91, 0.2, 1.0 };
   const GdkRGBA fill = { 0.96, 0.2, 0.28, 0.0 };
 
-  for (int i = 0; i <= WAYTATOR_TOOL_MOVE; i++) {
+  for (int i = 0; i <= SWASH_TOOL_MOVE; i++) {
     self->tool_colors[i] = primary;
     self->tool_fill_colors[i] = fill;
   }
 
-  self->tool_colors[WAYTATOR_TOOL_MARKER] = highlighter;
-  self->tool_colors[WAYTATOR_TOOL_BLUR] = (GdkRGBA){0.0, 0.0, 0.0, 1.0};
-  self->tool_colors[WAYTATOR_TOOL_ERASER] = (GdkRGBA){1.0, 1.0, 1.0, 1.0};
+  self->tool_colors[SWASH_TOOL_MARKER] = highlighter;
+  self->tool_colors[SWASH_TOOL_BLUR] = (GdkRGBA){0.0, 0.0, 0.0, 1.0};
+  self->tool_colors[SWASH_TOOL_ERASER] = (GdkRGBA){1.0, 1.0, 1.0, 1.0};
 }
 
 static const char *
-waytator_window_background_mode_label(WaytatorWindowBackgroundMode mode)
+swash_window_background_mode_label(SwashWindowBackgroundMode mode)
 {
   switch (mode) {
-  case WAYTATOR_WINDOW_BACKGROUND_FOLLOW_SYSTEM:
+  case SWASH_WINDOW_BACKGROUND_FOLLOW_SYSTEM:
     return "Follow system theme";
-  case WAYTATOR_WINDOW_BACKGROUND_OPAQUE:
+  case SWASH_WINDOW_BACKGROUND_OPAQUE:
     return "Opaque";
-  case WAYTATOR_WINDOW_BACKGROUND_TRANSPARENT:
+  case SWASH_WINDOW_BACKGROUND_TRANSPARENT:
     return "Transparent";
   default:
     return "Follow system theme";
@@ -123,13 +123,13 @@ waytator_window_background_mode_label(WaytatorWindowBackgroundMode mode)
 }
 
 static char *
-waytator_window_preferences_path(void)
+swash_window_preferences_path(void)
 {
-  return g_build_filename(g_get_user_config_dir(), WAYTATOR_SETTINGS_FILE, NULL);
+  return g_build_filename(g_get_user_config_dir(), SWASH_SETTINGS_FILE, NULL);
 }
 
 static gboolean
-waytator_window_parse_accelerator(const char      *accelerator,
+swash_window_parse_accelerator(const char      *accelerator,
                                   guint           *keyval,
                                   GdkModifierType *modifiers)
 {
@@ -152,7 +152,7 @@ waytator_window_parse_accelerator(const char      *accelerator,
 }
 
 static void
-waytator_window_apply_copy_shortcut(WaytatorWindow *self,
+swash_window_apply_copy_shortcut(SwashWindow *self,
                                     const char     *accelerator)
 {
   g_clear_pointer(&self->copy_shortcut_accel, g_free);
@@ -160,7 +160,7 @@ waytator_window_apply_copy_shortcut(WaytatorWindow *self,
 }
 
 static void
-waytator_window_update_shortcut_label(GtkShortcutLabel *label,
+swash_window_update_shortcut_label(GtkShortcutLabel *label,
                                       const char       *accelerator)
 {
   gtk_shortcut_label_set_accelerator(label,
@@ -168,7 +168,7 @@ waytator_window_update_shortcut_label(GtkShortcutLabel *label,
 }
 
 static const char *
-waytator_window_angle_snap_modifier_label(GdkModifierType modifiers)
+swash_window_angle_snap_modifier_label(GdkModifierType modifiers)
 {
   switch (modifiers & gtk_accelerator_get_default_mod_mask()) {
   case 0:
@@ -187,9 +187,9 @@ waytator_window_angle_snap_modifier_label(GdkModifierType modifiers)
 }
 
 static void
-waytator_window_load_preferences(WaytatorWindow *self)
+swash_window_load_preferences(SwashWindow *self)
 {
-  g_autofree char *path = waytator_window_preferences_path();
+  g_autofree char *path = swash_window_preferences_path();
   g_autoptr(GKeyFile) key_file = g_key_file_new();
   g_autoptr(GError) error = NULL;
 
@@ -199,41 +199,41 @@ waytator_window_load_preferences(WaytatorWindow *self)
     return;
   }
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "eraser_style", NULL)) {
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "eraser_style", NULL)) {
     const int eraser_style = g_key_file_get_integer(key_file,
-                                                    WAYTATOR_SETTINGS_GROUP,
+                                                    SWASH_SETTINGS_GROUP,
                                                     "eraser_style",
                                                     NULL);
 
-    if (eraser_style >= WAYTATOR_ERASER_STYLE_DUAL_RING
-        && eraser_style <= WAYTATOR_ERASER_STYLE_PATTERN)
+    if (eraser_style >= SWASH_ERASER_STYLE_DUAL_RING
+        && eraser_style <= SWASH_ERASER_STYLE_PATTERN)
       self->eraser_style = eraser_style;
   }
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "window_background_mode", NULL)) {
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "window_background_mode", NULL)) {
     const int mode = g_key_file_get_integer(key_file,
-                                            WAYTATOR_SETTINGS_GROUP,
+                                            SWASH_SETTINGS_GROUP,
                                             "window_background_mode",
                                             NULL);
 
-    if (mode >= WAYTATOR_WINDOW_BACKGROUND_FOLLOW_SYSTEM
-        && mode <= WAYTATOR_WINDOW_BACKGROUND_TRANSPARENT)
+    if (mode >= SWASH_WINDOW_BACKGROUND_FOLLOW_SYSTEM
+        && mode <= SWASH_WINDOW_BACKGROUND_TRANSPARENT)
       self->window_background_mode = mode;
   } else if (g_key_file_has_key(key_file,
-                                WAYTATOR_SETTINGS_GROUP,
+                                SWASH_SETTINGS_GROUP,
                                 "window_transparency_enabled",
                                 NULL)) {
     self->window_background_mode = g_key_file_get_boolean(key_file,
-                                                          WAYTATOR_SETTINGS_GROUP,
+                                                          SWASH_SETTINGS_GROUP,
                                                           "window_transparency_enabled",
                                                           NULL)
-                                 ? WAYTATOR_WINDOW_BACKGROUND_TRANSPARENT
-                                 : WAYTATOR_WINDOW_BACKGROUND_OPAQUE;
+                                 ? SWASH_WINDOW_BACKGROUND_TRANSPARENT
+                                 : SWASH_WINDOW_BACKGROUND_OPAQUE;
   }
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "window_background_opacity", NULL)) {
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "window_background_opacity", NULL)) {
     const double opacity = g_key_file_get_double(key_file,
-                                                 WAYTATOR_SETTINGS_GROUP,
+                                                 SWASH_SETTINGS_GROUP,
                                                  "window_background_opacity",
                                                  NULL);
 
@@ -241,15 +241,15 @@ waytator_window_load_preferences(WaytatorWindow *self)
       self->window_background_opacity = opacity;
   }
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "floating_controls_blur", NULL))
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "floating_controls_blur", NULL))
     self->floating_controls_blur = g_key_file_get_boolean(key_file,
-                                                          WAYTATOR_SETTINGS_GROUP,
+                                                          SWASH_SETTINGS_GROUP,
                                                           "floating_controls_blur",
                                                           NULL);
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "floating_controls_opacity", NULL)) {
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "floating_controls_opacity", NULL)) {
     const double opacity = g_key_file_get_double(key_file,
-                                                 WAYTATOR_SETTINGS_GROUP,
+                                                 SWASH_SETTINGS_GROUP,
                                                  "floating_controls_opacity",
                                                  NULL);
 
@@ -257,43 +257,43 @@ waytator_window_load_preferences(WaytatorWindow *self)
       self->floating_controls_opacity = opacity;
   }
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "esc_closes_window", NULL))
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "esc_closes_window", NULL))
     self->esc_closes_window = g_key_file_get_boolean(key_file,
-                                                     WAYTATOR_SETTINGS_GROUP,
+                                                     SWASH_SETTINGS_GROUP,
                                                      "esc_closes_window",
                                                      NULL);
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "copy_shortcut_enabled", NULL))
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "copy_shortcut_enabled", NULL))
     self->copy_shortcut_enabled = g_key_file_get_boolean(key_file,
-                                                         WAYTATOR_SETTINGS_GROUP,
+                                                         SWASH_SETTINGS_GROUP,
                                                          "copy_shortcut_enabled",
                                                          NULL);
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "auto_copy_latest_change", NULL))
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "auto_copy_latest_change", NULL))
     self->auto_copy_latest_change = g_key_file_get_boolean(key_file,
-                                                           WAYTATOR_SETTINGS_GROUP,
+                                                           SWASH_SETTINGS_GROUP,
                                                            "auto_copy_latest_change",
                                                            NULL);
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "allow_highlighter_overlap", NULL))
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "allow_highlighter_overlap", NULL))
     self->allow_highlighter_overlap = g_key_file_get_boolean(key_file,
-                                                             WAYTATOR_SETTINGS_GROUP,
+                                                             SWASH_SETTINGS_GROUP,
                                                              "allow_highlighter_overlap",
                                                              NULL);
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "copy_shortcut", NULL)) {
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "copy_shortcut", NULL)) {
     g_autofree char *accelerator = g_key_file_get_string(key_file,
-                                                         WAYTATOR_SETTINGS_GROUP,
+                                                         SWASH_SETTINGS_GROUP,
                                                          "copy_shortcut",
                                                          NULL);
 
-    if (waytator_window_parse_accelerator(accelerator, NULL, NULL))
-      waytator_window_apply_copy_shortcut(self, accelerator);
+    if (swash_window_parse_accelerator(accelerator, NULL, NULL))
+      swash_window_apply_copy_shortcut(self, accelerator);
   }
 
-  if (g_key_file_has_key(key_file, WAYTATOR_SETTINGS_GROUP, "angle_snap_modifiers", NULL)) {
+  if (g_key_file_has_key(key_file, SWASH_SETTINGS_GROUP, "angle_snap_modifiers", NULL)) {
     const int modifiers = g_key_file_get_integer(key_file,
-                                                 WAYTATOR_SETTINGS_GROUP,
+                                                 SWASH_SETTINGS_GROUP,
                                                  "angle_snap_modifiers",
                                                  NULL);
 
@@ -313,52 +313,52 @@ waytator_window_load_preferences(WaytatorWindow *self)
 }
 
 static void
-waytator_window_load_state(WaytatorWindow *self)
+swash_window_load_state(SwashWindow *self)
 {
-  g_autofree char *path = waytator_window_preferences_path();
+  g_autofree char *path = swash_window_preferences_path();
   g_autoptr(GKeyFile) key_file = g_key_file_new();
 
   if (!g_key_file_load_from_file(key_file, path, G_KEY_FILE_NONE, NULL))
     return;
 
-  if (!g_key_file_has_group(key_file, WAYTATOR_STATE_GROUP))
+  if (!g_key_file_has_group(key_file, SWASH_STATE_GROUP))
     return;
 
-  if (g_key_file_has_key(key_file, WAYTATOR_STATE_GROUP, "active_tool", NULL)) {
-    g_autofree char *name = g_key_file_get_string(key_file, WAYTATOR_STATE_GROUP, "active_tool", NULL);
+  if (g_key_file_has_key(key_file, SWASH_STATE_GROUP, "active_tool", NULL)) {
+    g_autofree char *name = g_key_file_get_string(key_file, SWASH_STATE_GROUP, "active_tool", NULL);
 
-    self->active_tool = waytator_tool_from_key_name(name);
+    self->active_tool = swash_tool_from_key_name(name);
   }
 
-  if (g_key_file_has_key(key_file, WAYTATOR_STATE_GROUP, "blur_type", NULL)) {
-    const int bt = g_key_file_get_integer(key_file, WAYTATOR_STATE_GROUP, "blur_type", NULL);
+  if (g_key_file_has_key(key_file, SWASH_STATE_GROUP, "blur_type", NULL)) {
+    const int bt = g_key_file_get_integer(key_file, SWASH_STATE_GROUP, "blur_type", NULL);
 
     if (bt == 0 || bt == 1)
       self->blur_type = bt;
   }
 
-  for (int i = 0; i <= WAYTATOR_TOOL_MOVE; i++) {
-    const char *name = waytator_tool_key_name(i);
+  for (int i = 0; i <= SWASH_TOOL_MOVE; i++) {
+    const char *name = swash_tool_key_name(i);
     g_autofree char *width_key = g_strdup_printf("tool_width_%s", name);
     g_autofree char *color_key = g_strdup_printf("tool_color_%s", name);
     g_autofree char *fill_key = g_strdup_printf("tool_fill_color_%s", name);
 
-    if (g_key_file_has_key(key_file, WAYTATOR_STATE_GROUP, width_key, NULL)) {
-      const double w = g_key_file_get_double(key_file, WAYTATOR_STATE_GROUP, width_key, NULL);
+    if (g_key_file_has_key(key_file, SWASH_STATE_GROUP, width_key, NULL)) {
+      const double w = g_key_file_get_double(key_file, SWASH_STATE_GROUP, width_key, NULL);
 
       if (w >= 1.0 && w <= 200.0)
         self->tool_widths[i] = w;
     }
 
-    if (g_key_file_has_key(key_file, WAYTATOR_STATE_GROUP, color_key, NULL)) {
-      g_autofree char *val = g_key_file_get_string(key_file, WAYTATOR_STATE_GROUP, color_key, NULL);
+    if (g_key_file_has_key(key_file, SWASH_STATE_GROUP, color_key, NULL)) {
+      g_autofree char *val = g_key_file_get_string(key_file, SWASH_STATE_GROUP, color_key, NULL);
 
       if (val != NULL)
         gdk_rgba_parse(&self->tool_colors[i], val);
     }
 
-    if (g_key_file_has_key(key_file, WAYTATOR_STATE_GROUP, fill_key, NULL)) {
-      g_autofree char *val = g_key_file_get_string(key_file, WAYTATOR_STATE_GROUP, fill_key, NULL);
+    if (g_key_file_has_key(key_file, SWASH_STATE_GROUP, fill_key, NULL)) {
+      g_autofree char *val = g_key_file_get_string(key_file, SWASH_STATE_GROUP, fill_key, NULL);
 
       if (val != NULL)
         gdk_rgba_parse(&self->tool_fill_colors[i], val);
@@ -367,9 +367,9 @@ waytator_window_load_state(WaytatorWindow *self)
 }
 
 static void
-waytator_window_save_preferences(WaytatorWindow *self)
+swash_window_save_preferences(SwashWindow *self)
 {
-  g_autofree char *path = waytator_window_preferences_path();
+  g_autofree char *path = swash_window_preferences_path();
   g_autofree char *directory = g_path_get_dirname(path);
   g_autoptr(GKeyFile) key_file = g_key_file_new();
   g_autofree char *data = NULL;
@@ -377,69 +377,69 @@ waytator_window_save_preferences(WaytatorWindow *self)
   g_autoptr(GError) error = NULL;
 
   g_key_file_set_integer(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "eraser_style",
                          self->eraser_style);
   g_key_file_set_integer(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "window_background_mode",
                          self->window_background_mode);
   g_key_file_set_double(key_file,
-                        WAYTATOR_SETTINGS_GROUP,
+                        SWASH_SETTINGS_GROUP,
                         "window_background_opacity",
                         self->window_background_opacity);
   g_key_file_set_boolean(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "floating_controls_blur",
                          self->floating_controls_blur);
   g_key_file_set_double(key_file,
-                        WAYTATOR_SETTINGS_GROUP,
+                        SWASH_SETTINGS_GROUP,
                         "floating_controls_opacity",
                         self->floating_controls_opacity);
   g_key_file_set_boolean(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "esc_closes_window",
                          self->esc_closes_window);
   g_key_file_set_boolean(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "copy_shortcut_enabled",
                          self->copy_shortcut_enabled);
   g_key_file_set_boolean(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "auto_copy_latest_change",
                          self->auto_copy_latest_change);
   g_key_file_set_boolean(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "allow_highlighter_overlap",
                          self->allow_highlighter_overlap);
   g_key_file_set_string(key_file,
-                        WAYTATOR_SETTINGS_GROUP,
+                        SWASH_SETTINGS_GROUP,
                         "copy_shortcut",
                         self->copy_shortcut_accel);
   g_key_file_set_integer(key_file,
-                         WAYTATOR_SETTINGS_GROUP,
+                         SWASH_SETTINGS_GROUP,
                          "angle_snap_modifiers",
                          self->angle_snap_modifiers);
   g_key_file_set_string(key_file,
-                        WAYTATOR_STATE_GROUP,
+                        SWASH_STATE_GROUP,
                         "active_tool",
-                        waytator_tool_key_name(self->active_tool));
+                        swash_tool_key_name(self->active_tool));
   g_key_file_set_integer(key_file,
-                         WAYTATOR_STATE_GROUP,
+                         SWASH_STATE_GROUP,
                          "blur_type",
                          self->blur_type);
 
-  for (int i = 0; i <= WAYTATOR_TOOL_MOVE; i++) {
-    const char *name = waytator_tool_key_name(i);
+  for (int i = 0; i <= SWASH_TOOL_MOVE; i++) {
+    const char *name = swash_tool_key_name(i);
     g_autofree char *width_key = g_strdup_printf("tool_width_%s", name);
     g_autofree char *color_key = g_strdup_printf("tool_color_%s", name);
     g_autofree char *fill_key = g_strdup_printf("tool_fill_color_%s", name);
     g_autofree char *color_str = gdk_rgba_to_string(&self->tool_colors[i]);
     g_autofree char *fill_str = gdk_rgba_to_string(&self->tool_fill_colors[i]);
 
-    g_key_file_set_double(key_file, WAYTATOR_STATE_GROUP, width_key, self->tool_widths[i]);
-    g_key_file_set_string(key_file, WAYTATOR_STATE_GROUP, color_key, color_str);
-    g_key_file_set_string(key_file, WAYTATOR_STATE_GROUP, fill_key, fill_str);
+    g_key_file_set_double(key_file, SWASH_STATE_GROUP, width_key, self->tool_widths[i]);
+    g_key_file_set_string(key_file, SWASH_STATE_GROUP, color_key, color_str);
+    g_key_file_set_string(key_file, SWASH_STATE_GROUP, fill_key, fill_str);
   }
 
   if (g_mkdir_with_parents(directory, 0700) != 0) {
@@ -453,14 +453,14 @@ waytator_window_save_preferences(WaytatorWindow *self)
 }
 
 static const char *
-waytator_window_eraser_style_label(WaytatorEraserStyle style)
+swash_window_eraser_style_label(SwashEraserStyle style)
 {
   switch (style) {
-  case WAYTATOR_ERASER_STYLE_DUAL_RING:
+  case SWASH_ERASER_STYLE_DUAL_RING:
     return "Dual ring";
-  case WAYTATOR_ERASER_STYLE_DASHED_RING:
+  case SWASH_ERASER_STYLE_DASHED_RING:
     return "Dashed ring";
-  case WAYTATOR_ERASER_STYLE_PATTERN:
+  case SWASH_ERASER_STYLE_PATTERN:
     return "Pattern fill";
   default:
     return "Dual ring";
@@ -468,34 +468,34 @@ waytator_window_eraser_style_label(WaytatorEraserStyle style)
 }
 
 static void
-waytator_window_eraser_style_changed(AdwComboRow    *row,
+swash_window_eraser_style_changed(AdwComboRow    *row,
                                      GParamSpec     *pspec,
-                                     WaytatorWindow *self)
+                                     SwashWindow *self)
 {
   (void) pspec;
 
   self->eraser_style = adw_combo_row_get_selected(row);
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 static void
-waytator_window_window_controls_changed(GListModel     *model,
+swash_window_window_controls_changed(GListModel     *model,
                                         guint           position,
                                         guint           removed,
                                         guint           added,
-                                        WaytatorWindow *self)
+                                        SwashWindow *self)
 {
   (void) model;
   (void) position;
   (void) removed;
   (void) added;
 
-  waytator_window_update_window_controls(self);
+  swash_window_update_window_controls(self);
 }
 
 static void
-waytator_window_update_window_controls(WaytatorWindow *self)
+swash_window_update_window_controls(SwashWindow *self)
 {
   const gboolean has_start_controls = self->start_window_controls_children != NULL
                                    && g_list_model_get_n_items(self->start_window_controls_children) > 0;
@@ -508,9 +508,9 @@ waytator_window_update_window_controls(WaytatorWindow *self)
 }
 
 static void
-waytator_window_background_mode_changed(AdwComboRow    *row,
+swash_window_background_mode_changed(AdwComboRow    *row,
                                         GParamSpec     *pspec,
-                                        WaytatorWindow *self)
+                                        SwashWindow *self)
 {
   GtkWidget *opacity_row;
 
@@ -520,56 +520,56 @@ waytator_window_background_mode_changed(AdwComboRow    *row,
   opacity_row = g_object_get_data(G_OBJECT(row), "opacity-row");
   if (opacity_row != NULL)
     gtk_widget_set_sensitive(opacity_row,
-                             self->window_background_mode == WAYTATOR_WINDOW_BACKGROUND_TRANSPARENT);
-  waytator_window_save_preferences(self);
-  waytator_window_update_window_background(self);
+                             self->window_background_mode == SWASH_WINDOW_BACKGROUND_TRANSPARENT);
+  swash_window_save_preferences(self);
+  swash_window_update_window_background(self);
 }
 
 static void
-waytator_window_transparency_opacity_changed(GtkSpinButton  *spin_button,
-                                             WaytatorWindow *self)
+swash_window_transparency_opacity_changed(GtkSpinButton  *spin_button,
+                                             SwashWindow *self)
 {
   self->window_background_opacity = gtk_spin_button_get_value(spin_button);
-  waytator_window_save_preferences(self);
-  waytator_window_update_window_background(self);
+  swash_window_save_preferences(self);
+  swash_window_update_window_background(self);
 }
 
 static void
-waytator_window_floating_controls_blur_changed(AdwSwitchRow   *row,
+swash_window_floating_controls_blur_changed(AdwSwitchRow   *row,
                                                GParamSpec     *pspec,
-                                               WaytatorWindow *self)
+                                               SwashWindow *self)
 {
   (void) pspec;
 
   self->floating_controls_blur = adw_switch_row_get_active(row);
-  waytator_window_save_preferences(self);
-  waytator_window_update_widget_appearance(self);
+  swash_window_save_preferences(self);
+  swash_window_update_widget_appearance(self);
 }
 
 static void
-waytator_window_floating_controls_opacity_changed(GtkSpinButton  *spin_button,
-                                                  WaytatorWindow *self)
+swash_window_floating_controls_opacity_changed(GtkSpinButton  *spin_button,
+                                                  SwashWindow *self)
 {
   self->floating_controls_opacity = gtk_spin_button_get_value(spin_button);
-  waytator_window_save_preferences(self);
-  waytator_window_update_widget_appearance(self);
+  swash_window_save_preferences(self);
+  swash_window_update_widget_appearance(self);
 }
 
 static void
-waytator_window_esc_closes_window_changed(AdwSwitchRow   *row,
+swash_window_esc_closes_window_changed(AdwSwitchRow   *row,
                                           GParamSpec     *pspec,
-                                          WaytatorWindow *self)
+                                          SwashWindow *self)
 {
   (void) pspec;
 
   self->esc_closes_window = adw_switch_row_get_active(row);
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
 }
 
 static void
-waytator_window_copy_shortcut_enabled_changed(AdwSwitchRow   *row,
+swash_window_copy_shortcut_enabled_changed(AdwSwitchRow   *row,
                                               GParamSpec     *pspec,
-                                              WaytatorWindow *self)
+                                              SwashWindow *self)
 {
   GtkWidget *shortcut_row;
 
@@ -579,36 +579,36 @@ waytator_window_copy_shortcut_enabled_changed(AdwSwitchRow   *row,
   shortcut_row = g_object_get_data(G_OBJECT(row), "shortcut-row");
   if (shortcut_row != NULL)
     gtk_widget_set_sensitive(shortcut_row, self->copy_shortcut_enabled);
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
 }
 
 static void
-waytator_window_auto_copy_latest_change_changed(AdwSwitchRow   *row,
+swash_window_auto_copy_latest_change_changed(AdwSwitchRow   *row,
                                                 GParamSpec     *pspec,
-                                                WaytatorWindow *self)
+                                                SwashWindow *self)
 {
   (void) pspec;
 
   self->auto_copy_latest_change = adw_switch_row_get_active(row);
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
 }
 
 static void
-waytator_window_highlighter_overlap_changed(AdwSwitchRow   *row,
+swash_window_highlighter_overlap_changed(AdwSwitchRow   *row,
                                             GParamSpec     *pspec,
-                                            WaytatorWindow *self)
+                                            SwashWindow *self)
 {
   (void) pspec;
 
   self->allow_highlighter_overlap = adw_switch_row_get_active(row);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
 }
 
 static void
-waytator_window_angle_snap_modifier_changed(AdwComboRow    *row,
+swash_window_angle_snap_modifier_changed(AdwComboRow    *row,
                                             GParamSpec     *pspec,
-                                            WaytatorWindow *self)
+                                            SwashWindow *self)
 {
   static const GdkModifierType snap_modifiers[] = {
     0,
@@ -625,11 +625,11 @@ waytator_window_angle_snap_modifier_changed(AdwComboRow    *row,
     return;
 
   self->angle_snap_modifiers = snap_modifiers[selected];
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
 }
 
 static void
-waytator_window_apply_copy_shortcut_row(GtkButton *button,
+swash_window_apply_copy_shortcut_row(GtkButton *button,
                                         gpointer   user_data)
 {
   GtkWidget *shortcut_label;
@@ -644,14 +644,14 @@ waytator_window_apply_copy_shortcut_row(GtkButton *button,
 }
 
 static gboolean
-waytator_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *controller,
+swash_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *controller,
                                                   guint                  keyval,
                                                   guint                  keycode,
                                                   GdkModifierType        state,
                                                   gpointer               user_data)
 {
   GtkWidget *button = GTK_WIDGET(user_data);
-  WaytatorWindow *self = WAYTATOR_WINDOW(g_object_get_data(G_OBJECT(button), "window"));
+  SwashWindow *self = SWASH_WINDOW(g_object_get_data(G_OBJECT(button), "window"));
   GtkShortcutLabel *shortcut_label = GTK_SHORTCUT_LABEL(g_object_get_data(G_OBJECT(button), "shortcut-label"));
   GdkModifierType modifiers;
   g_autofree char *accelerator = NULL;
@@ -673,8 +673,8 @@ waytator_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *control
   }
 
   if (keyval == GDK_KEY_BackSpace || keyval == GDK_KEY_Delete) {
-    waytator_window_apply_copy_shortcut(self, "");
-    waytator_window_update_shortcut_label(shortcut_label, "");
+    swash_window_apply_copy_shortcut(self, "");
+    swash_window_update_shortcut_label(shortcut_label, "");
   } else {
     if (keyval == GDK_KEY_Shift_L || keyval == GDK_KEY_Shift_R
         || keyval == GDK_KEY_Control_L || keyval == GDK_KEY_Control_R
@@ -685,14 +685,14 @@ waytator_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *control
       return TRUE;
 
     accelerator = gtk_accelerator_name(keyval, modifiers);
-    if (!waytator_window_parse_accelerator(accelerator, NULL, NULL))
+    if (!swash_window_parse_accelerator(accelerator, NULL, NULL))
       return TRUE;
 
-    waytator_window_apply_copy_shortcut(self, accelerator);
-    waytator_window_update_shortcut_label(shortcut_label, self->copy_shortcut_accel);
+    swash_window_apply_copy_shortcut(self, accelerator);
+    swash_window_update_shortcut_label(shortcut_label, self->copy_shortcut_accel);
   }
 
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
   gtk_button_set_has_frame(GTK_BUTTON(button), FALSE);
   gtk_widget_remove_css_class(button, "suggested-action");
   gtk_widget_set_sensitive(GTK_WIDGET(shortcut_label), TRUE);
@@ -702,33 +702,33 @@ waytator_window_copy_shortcut_capture_key_pressed(GtkEventControllerKey *control
 }
 
 static void
-waytator_window_update_window_background(WaytatorWindow *self)
+swash_window_update_window_background(SwashWindow *self)
 {
   g_autofree char *css = NULL;
 
   if (self->window_css_provider == NULL)
     return;
 
-  if (self->window_background_mode == WAYTATOR_WINDOW_BACKGROUND_FOLLOW_SYSTEM) {
+  if (self->window_background_mode == SWASH_WINDOW_BACKGROUND_FOLLOW_SYSTEM) {
     gtk_css_provider_load_from_string(self->window_css_provider, "");
     return;
   }
 
   //dont u just love how gtk css requires repeating the same properties for some reason
-  if (self->window_background_mode == WAYTATOR_WINDOW_BACKGROUND_OPAQUE) {
+  if (self->window_background_mode == SWASH_WINDOW_BACKGROUND_OPAQUE) {
     gtk_css_provider_load_from_string(self->window_css_provider,
-                                      "window.waytator-window { background: @window_bg_color; background-color: @window_bg_color; }");
+                                      "window.window { background: @window_bg_color; background-color: @window_bg_color; }");
     return;
   }
 
-  css = g_strdup_printf("window.waytator-window { background: alpha(@window_bg_color, %.1f); background-color: alpha(@window_bg_color, %.1f); }",
+  css = g_strdup_printf("window.window { background: alpha(@window_bg_color, %.1f); background-color: alpha(@window_bg_color, %.1f); }",
                         self->window_background_opacity,
                         self->window_background_opacity);
   gtk_css_provider_load_from_string(self->window_css_provider, css);
 }
 
 static void
-waytator_window_update_widget_appearance(WaytatorWindow *self)
+swash_window_update_widget_appearance(SwashWindow *self)
 {
   g_autofree char *css = NULL;
   const char *blur = self->floating_controls_blur ? "blur(18px)" : "none";
@@ -755,7 +755,7 @@ waytator_window_update_widget_appearance(WaytatorWindow *self)
 }
 
 static void
-waytator_window_show_preferences(WaytatorWindow *self)
+swash_window_show_preferences(SwashWindow *self)
 {
   AdwPreferencesDialog *dialog;
   AdwPreferencesPage *page;
@@ -810,24 +810,24 @@ waytator_window_show_preferences(WaytatorWindow *self)
   copy_shortcut_button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   copy_shortcut_key_controller = gtk_event_controller_key_new();
   model = gtk_string_list_new((const char *[]) {
-    waytator_window_eraser_style_label(WAYTATOR_ERASER_STYLE_DUAL_RING),
-    waytator_window_eraser_style_label(WAYTATOR_ERASER_STYLE_DASHED_RING),
-    waytator_window_eraser_style_label(WAYTATOR_ERASER_STYLE_PATTERN),
+    swash_window_eraser_style_label(SWASH_ERASER_STYLE_DUAL_RING),
+    swash_window_eraser_style_label(SWASH_ERASER_STYLE_DASHED_RING),
+    swash_window_eraser_style_label(SWASH_ERASER_STYLE_PATTERN),
     NULL,
   });
   //yes this is really how you have to do dropdowns in gtk
   background_model = gtk_string_list_new((const char *[]) {
-    waytator_window_background_mode_label(WAYTATOR_WINDOW_BACKGROUND_FOLLOW_SYSTEM),
-    waytator_window_background_mode_label(WAYTATOR_WINDOW_BACKGROUND_OPAQUE),
-    waytator_window_background_mode_label(WAYTATOR_WINDOW_BACKGROUND_TRANSPARENT),
+    swash_window_background_mode_label(SWASH_WINDOW_BACKGROUND_FOLLOW_SYSTEM),
+    swash_window_background_mode_label(SWASH_WINDOW_BACKGROUND_OPAQUE),
+    swash_window_background_mode_label(SWASH_WINDOW_BACKGROUND_TRANSPARENT),
     NULL,
   });
   angle_snap_model = gtk_string_list_new((const char *[]) {
-    waytator_window_angle_snap_modifier_label(0),
-    waytator_window_angle_snap_modifier_label(GDK_SHIFT_MASK),
-    waytator_window_angle_snap_modifier_label(GDK_CONTROL_MASK),
-    waytator_window_angle_snap_modifier_label(GDK_ALT_MASK),
-    waytator_window_angle_snap_modifier_label(GDK_SUPER_MASK),
+    swash_window_angle_snap_modifier_label(0),
+    swash_window_angle_snap_modifier_label(GDK_SHIFT_MASK),
+    swash_window_angle_snap_modifier_label(GDK_CONTROL_MASK),
+    swash_window_angle_snap_modifier_label(GDK_ALT_MASK),
+    swash_window_angle_snap_modifier_label(GDK_SUPER_MASK),
     NULL,
   });
 
@@ -848,7 +848,7 @@ waytator_window_show_preferences(WaytatorWindow *self)
   adw_action_row_add_suffix(opacity_row, GTK_WIDGET(opacity_spin_button));
   adw_action_row_set_activatable_widget(opacity_row, GTK_WIDGET(opacity_spin_button));
   gtk_widget_set_sensitive(GTK_WIDGET(opacity_row),
-                           self->window_background_mode == WAYTATOR_WINDOW_BACKGROUND_TRANSPARENT);
+                           self->window_background_mode == SWASH_WINDOW_BACKGROUND_TRANSPARENT);
   g_object_set_data(G_OBJECT(background_mode_row), "opacity-row", opacity_row);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(floating_controls_blur_row), "Blur the background of controls");
   adw_switch_row_set_active(floating_controls_blur_row, self->floating_controls_blur);
@@ -864,7 +864,7 @@ waytator_window_show_preferences(WaytatorWindow *self)
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(copy_shortcut_enabled_row), "Enable copy shortcut");
   adw_switch_row_set_active(copy_shortcut_enabled_row, self->copy_shortcut_enabled);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(copy_shortcut_row), "Copy shortcut");
-  waytator_window_update_shortcut_label(GTK_SHORTCUT_LABEL(copy_shortcut_label), self->copy_shortcut_accel);
+  swash_window_update_shortcut_label(GTK_SHORTCUT_LABEL(copy_shortcut_label), self->copy_shortcut_accel);
   gtk_widget_set_valign(copy_shortcut_label, GTK_ALIGN_CENTER);
   gtk_widget_set_halign(copy_shortcut_label, GTK_ALIGN_END);
   gtk_widget_set_hexpand(copy_shortcut_button_box, FALSE);
@@ -918,53 +918,53 @@ waytator_window_show_preferences(WaytatorWindow *self)
   adw_preferences_dialog_set_search_enabled(dialog, FALSE);
   adw_dialog_set_content_width(ADW_DIALOG(dialog), 420);
 
-  g_signal_connect(row, "notify::selected", G_CALLBACK(waytator_window_eraser_style_changed), self);
+  g_signal_connect(row, "notify::selected", G_CALLBACK(swash_window_eraser_style_changed), self);
   g_signal_connect(background_mode_row,
                    "notify::selected",
-                   G_CALLBACK(waytator_window_background_mode_changed),
+                   G_CALLBACK(swash_window_background_mode_changed),
                    self);
   g_signal_connect(opacity_spin_button,
                    "value-changed",
-                   G_CALLBACK(waytator_window_transparency_opacity_changed),
+                   G_CALLBACK(swash_window_transparency_opacity_changed),
                    self);
   g_signal_connect(floating_controls_blur_row,
                    "notify::active",
-                   G_CALLBACK(waytator_window_floating_controls_blur_changed),
+                   G_CALLBACK(swash_window_floating_controls_blur_changed),
                    self);
   g_signal_connect(floating_controls_opacity_spin_button,
                    "value-changed",
-                   G_CALLBACK(waytator_window_floating_controls_opacity_changed),
+                   G_CALLBACK(swash_window_floating_controls_opacity_changed),
                    self);
   g_signal_connect(esc_closes_window_row,
                    "notify::active",
-                   G_CALLBACK(waytator_window_esc_closes_window_changed),
+                   G_CALLBACK(swash_window_esc_closes_window_changed),
                    self);
   g_signal_connect(copy_shortcut_enabled_row,
                    "notify::active",
-                   G_CALLBACK(waytator_window_copy_shortcut_enabled_changed),
+                   G_CALLBACK(swash_window_copy_shortcut_enabled_changed),
                    self);
   g_signal_connect(angle_snap_modifier_row,
                    "notify::selected",
-                   G_CALLBACK(waytator_window_angle_snap_modifier_changed),
+                   G_CALLBACK(swash_window_angle_snap_modifier_changed),
                    self);
   g_signal_connect(auto_copy_latest_change_row,
                    "notify::active",
-                   G_CALLBACK(waytator_window_auto_copy_latest_change_changed),
+                   G_CALLBACK(swash_window_auto_copy_latest_change_changed),
                    self);
   g_signal_connect(highlighter_overlap_row,
                    "notify::active",
-                   G_CALLBACK(waytator_window_highlighter_overlap_changed),
+                   G_CALLBACK(swash_window_highlighter_overlap_changed),
                    self);
   g_object_set_data(G_OBJECT(copy_shortcut_enabled_row), "shortcut-row", copy_shortcut_row);
   g_object_set_data(G_OBJECT(copy_shortcut_button), "window", self);
   g_object_set_data(G_OBJECT(copy_shortcut_button), "shortcut-label", copy_shortcut_label);
   g_signal_connect(copy_shortcut_button,
                    "clicked",
-                   G_CALLBACK(waytator_window_apply_copy_shortcut_row),
+                   G_CALLBACK(swash_window_apply_copy_shortcut_row),
                    NULL);
   g_signal_connect(copy_shortcut_key_controller,
                    "key-pressed",
-                   G_CALLBACK(waytator_window_copy_shortcut_capture_key_pressed),
+                   G_CALLBACK(swash_window_copy_shortcut_capture_key_pressed),
                    copy_shortcut_button);
 
   adw_dialog_present(ADW_DIALOG(dialog), GTK_WIDGET(self));
@@ -974,50 +974,50 @@ waytator_window_show_preferences(WaytatorWindow *self)
 }
 
 static void
-waytator_window_show_about(WaytatorWindow *self)
+swash_window_show_about(SwashWindow *self)
 {
   adw_show_about_dialog(GTK_WIDGET(self),
-                        "application-name", "Waytator",
-                        "application-icon", "waytator",
-                        "version", WAYTATOR_VERSION,
-                        "developer-name", "faetalize",
-                        "developers", (const char *[]) { "faetalize", NULL },
-                        "issue-url", "https://github.com/faetalize/waytator/issues",
+                        "application-name", "Swash",
+                        "application-icon", "swash",
+                        "version", SWASH_VERSION,
+                        "developer-name", "Lemmy",
+                        "developers", (const char *[]) { "Lemmy", NULL },
+                        "issue-url", "https://github.com/ItsLemmy/swash/issues",
                         "license-type", GTK_LICENSE_GPL_3_0,
-                        "website", "https://github.com/faetalize/waytator",
+                        "website", "https://github.com/ItsLemmy/swash",
                         NULL);
 }
 
 static void
-waytator_window_preferences_action(GtkWidget  *widget,
+swash_window_preferences_action(GtkWidget  *widget,
                                    const char *action_name,
                                    GVariant   *parameter)
 {
   (void) action_name;
   (void) parameter;
 
-  waytator_window_show_preferences(WAYTATOR_WINDOW(widget));
+  swash_window_show_preferences(SWASH_WINDOW(widget));
 }
 
 static void
-waytator_window_about_action(GtkWidget  *widget,
+swash_window_about_action(GtkWidget  *widget,
                              const char *action_name,
                              GVariant   *parameter)
 {
   (void) action_name;
   (void) parameter;
 
-  waytator_window_show_about(WAYTATOR_WINDOW(widget));
+  swash_window_show_about(SWASH_WINDOW(widget));
 }
 
 GPtrArray *
-waytator_window_strokes(WaytatorWindow *self)
+swash_window_strokes(SwashWindow *self)
 {
-  return waytator_document_get_strokes(self->document);
+  return swash_document_get_strokes(self->document);
 }
 
 static void
-waytator_window_set_text_view_text(GtkTextView *view,
+swash_window_set_text_view_text(GtkTextView *view,
                                    const char  *text)
 {
   GtkTextBuffer *buffer = gtk_text_view_get_buffer(view);
@@ -1026,7 +1026,7 @@ waytator_window_set_text_view_text(GtkTextView *view,
 }
 
 static char *
-waytator_window_build_ocr_all_text(GPtrArray *lines)
+swash_window_build_ocr_all_text(GPtrArray *lines)
 {
   GString *text;
   guint i;
@@ -1037,7 +1037,7 @@ waytator_window_build_ocr_all_text(GPtrArray *lines)
   text = g_string_new(NULL);
 
   for (i = 0; i < lines->len; i++) {
-    WaytatorOcrLine *line = g_ptr_array_index(lines, i);
+    SwashOcrLine *line = g_ptr_array_index(lines, i);
 
     if (line->text == NULL || line->text[0] == '\0')
       continue;
@@ -1051,13 +1051,13 @@ waytator_window_build_ocr_all_text(GPtrArray *lines)
 }
 
 static void
-waytator_window_clear_ocr_widgets(WaytatorWindow *self)
+swash_window_clear_ocr_widgets(SwashWindow *self)
 {
   if (self->ocr_lines != NULL) {
     guint i;
 
     for (i = 0; i < self->ocr_lines->len; i++) {
-      WaytatorOcrLine *line = g_ptr_array_index(self->ocr_lines, i);
+      SwashOcrLine *line = g_ptr_array_index(self->ocr_lines, i);
 
       line->button = NULL;
     }
@@ -1068,8 +1068,8 @@ waytator_window_clear_ocr_widgets(WaytatorWindow *self)
 }
 
 static void
-waytator_window_select_ocr_line(WaytatorWindow  *self,
-                                WaytatorOcrLine *line)
+swash_window_select_ocr_line(SwashWindow  *self,
+                                SwashOcrLine *line)
 {
   guint i;
 
@@ -1077,7 +1077,7 @@ waytator_window_select_ocr_line(WaytatorWindow  *self,
 
   if (self->ocr_lines != NULL) {
     for (i = 0; i < self->ocr_lines->len; i++) {
-      WaytatorOcrLine *candidate = g_ptr_array_index(self->ocr_lines, i);
+      SwashOcrLine *candidate = g_ptr_array_index(self->ocr_lines, i);
 
       if (candidate->button == NULL)
         continue;
@@ -1091,14 +1091,14 @@ waytator_window_select_ocr_line(WaytatorWindow  *self,
 
   if (line != NULL) {
     gtk_stack_set_visible_child_name(self->ocr_panel_stack, "selected");
-    waytator_window_set_ocr_panel_visible(self, TRUE);
+    swash_window_set_ocr_panel_visible(self, TRUE);
   }
 
-  waytator_window_update_ocr_panel(self);
+  swash_window_update_ocr_panel(self);
 }
 
 static void
-waytator_window_set_ocr_panel_visible(WaytatorWindow *self,
+swash_window_set_ocr_panel_visible(SwashWindow *self,
                                       gboolean        visible)
 {
   if (!gtk_widget_get_visible(self->ocr_panel_toggle_container) && visible)
@@ -1112,52 +1112,52 @@ waytator_window_set_ocr_panel_visible(WaytatorWindow *self,
 }
 
 static void
-waytator_window_clear_ocr_results(WaytatorWindow *self)
+swash_window_clear_ocr_results(SwashWindow *self)
 {
   self->ocr_running = FALSE;
   self->ocr_generation++;
   self->selected_ocr_line = NULL;
-  waytator_window_clear_ocr_widgets(self);
+  swash_window_clear_ocr_widgets(self);
   g_clear_pointer(&self->ocr_lines, g_ptr_array_unref);
   g_clear_pointer(&self->ocr_all_text, g_free);
   gtk_widget_set_visible(GTK_WIDGET(self->ocr_overlay), FALSE);
   gtk_widget_set_visible(self->ocr_panel_toggle_container, FALSE);
   gtk_toggle_button_set_active(self->ocr_panel_toggle_button, FALSE);
-  waytator_window_update_ocr_panel(self);
+  swash_window_update_ocr_panel(self);
 }
 
 static gboolean
-waytator_window_ocr_is_visible(WaytatorWindow *self)
+swash_window_ocr_is_visible(SwashWindow *self)
 {
-  return self->active_tool == WAYTATOR_TOOL_OCR
+  return self->active_tool == SWASH_TOOL_OCR
       && self->texture != NULL
       && self->ocr_lines != NULL
       && self->ocr_lines->len > 0;
 }
 
 static void
-waytator_window_ocr_box_clicked(GtkButton *button,
+swash_window_ocr_box_clicked(GtkButton *button,
                                 gpointer   user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   guint i;
 
   if (self->ocr_lines == NULL)
     return;
 
   for (i = 0; i < self->ocr_lines->len; i++) {
-    WaytatorOcrLine *line = g_ptr_array_index(self->ocr_lines, i);
+    SwashOcrLine *line = g_ptr_array_index(self->ocr_lines, i);
 
     if (line->button == GTK_WIDGET(button)) {
-      waytator_window_select_ocr_line(self, line);
+      swash_window_select_ocr_line(self, line);
       return;
     }
   }
 }
 
 static void
-waytator_window_add_ocr_button(WaytatorWindow  *self,
-                               WaytatorOcrLine *line)
+swash_window_add_ocr_button(SwashWindow  *self,
+                               SwashOcrLine *line)
 {
   GtkWidget *button = gtk_button_new();
 
@@ -1165,14 +1165,14 @@ waytator_window_add_ocr_button(WaytatorWindow  *self,
   gtk_widget_set_focusable(button, FALSE);
   gtk_widget_add_css_class(button, "ocr-overlay-box");
   gtk_widget_set_tooltip_text(button, line->text);
-  g_signal_connect(button, "clicked", G_CALLBACK(waytator_window_ocr_box_clicked), self);
+  g_signal_connect(button, "clicked", G_CALLBACK(swash_window_ocr_box_clicked), self);
 
   gtk_fixed_put(self->ocr_overlay, button, 0.0, 0.0);
   line->button = button;
 }
 
 void
-waytator_window_update_ocr_overlay(WaytatorWindow *self)
+swash_window_update_ocr_overlay(SwashWindow *self)
 {
   const int image_width = self->texture != NULL
                         ? gdk_paintable_get_intrinsic_width(GDK_PAINTABLE(self->texture))
@@ -1188,12 +1188,12 @@ waytator_window_update_ocr_overlay(WaytatorWindow *self)
   double display_height;
   guint i;
 
-  if (!waytator_window_ocr_is_visible(self)) {
+  if (!swash_window_ocr_is_visible(self)) {
     gtk_widget_set_visible(GTK_WIDGET(self->ocr_overlay), FALSE);
     return;
   }
 
-  if (!waytator_window_get_display_rect(self,
+  if (!swash_window_get_display_rect(self,
                                         widget_width,
                                         widget_height,
                                         &display_x,
@@ -1209,7 +1209,7 @@ waytator_window_update_ocr_overlay(WaytatorWindow *self)
   gtk_widget_set_visible(GTK_WIDGET(self->ocr_overlay), TRUE);
 
   for (i = 0; i < self->ocr_lines->len; i++) {
-    WaytatorOcrLine *line = g_ptr_array_index(self->ocr_lines, i);
+    SwashOcrLine *line = g_ptr_array_index(self->ocr_lines, i);
     const double scale_x = display_width / image_width;
     const double scale_y = display_height / image_height;
     const int x = (int) floor(display_x + line->left * scale_x);
@@ -1218,20 +1218,20 @@ waytator_window_update_ocr_overlay(WaytatorWindow *self)
     const int height = MAX(18, (int) ceil(line->height * scale_y));
 
     if (line->button == NULL)
-      waytator_window_add_ocr_button(self, line);
+      swash_window_add_ocr_button(self, line);
 
     gtk_widget_set_size_request(line->button, width, height);
     gtk_fixed_move(self->ocr_overlay, line->button, x, y);
   }
 
-  waytator_window_select_ocr_line(self, self->selected_ocr_line);
+  swash_window_select_ocr_line(self, self->selected_ocr_line);
 }
 
 void
-waytator_window_update_ocr_panel(WaytatorWindow *self)
+swash_window_update_ocr_panel(SwashWindow *self)
 {
   const gboolean has_results = self->ocr_lines != NULL && self->ocr_lines->len > 0;
-  const gboolean can_show_toggle = self->active_tool == WAYTATOR_TOOL_OCR
+  const gboolean can_show_toggle = self->active_tool == SWASH_TOOL_OCR
                                  && self->texture != NULL
                                  && (self->ocr_running || has_results);
   const gboolean show_panel = can_show_toggle
@@ -1253,30 +1253,30 @@ waytator_window_update_ocr_panel(WaytatorWindow *self)
              : "No OCR text available.";
   }
 
-  waytator_window_set_text_view_text(self->ocr_selected_text_view, selected_text);
-  waytator_window_set_text_view_text(self->ocr_all_text_view, all_text);
+  swash_window_set_text_view_text(self->ocr_selected_text_view, selected_text);
+  swash_window_set_text_view_text(self->ocr_all_text_view, all_text);
   if (adw_bottom_sheet_get_open(self->ocr_panel_bottom_sheet) != show_panel)
     adw_bottom_sheet_set_open(self->ocr_panel_bottom_sheet, show_panel);
 }
 
 static void
-waytator_window_ocr_panel_toggled(GtkToggleButton *button,
+swash_window_ocr_panel_toggled(GtkToggleButton *button,
                                   gpointer         user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   if (gtk_toggle_button_get_active(button) && self->selected_ocr_line == NULL)
     gtk_stack_set_visible_child_name(self->ocr_panel_stack, "all");
 
-  waytator_window_update_ocr_panel(self);
+  swash_window_update_ocr_panel(self);
 }
 
 static void
-waytator_window_ocr_panel_open_changed(GObject    *object,
+swash_window_ocr_panel_open_changed(GObject    *object,
                                        GParamSpec *pspec,
                                        gpointer    user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   const gboolean open = adw_bottom_sheet_get_open(self->ocr_panel_bottom_sheet);
 
   (void) object;
@@ -1290,24 +1290,24 @@ waytator_window_ocr_panel_open_changed(GObject    *object,
 }
 
 static void
-waytator_window_ocr_panel_close_clicked(GtkButton *button,
+swash_window_ocr_panel_close_clicked(GtkButton *button,
                                         gpointer   user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) button;
 
-  waytator_window_set_ocr_panel_visible(self, FALSE);
+  swash_window_set_ocr_panel_visible(self, FALSE);
 }
 
 static void
-waytator_window_ocr_ready(GObject      *source_object,
+swash_window_ocr_ready(GObject      *source_object,
                           GAsyncResult *result,
                           gpointer      user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   g_autoptr(GError) error = NULL;
-  WaytatorOcrResult *ocr_result;
+  SwashOcrResult *ocr_result;
 
   (void) source_object;
 
@@ -1315,69 +1315,69 @@ waytator_window_ocr_ready(GObject      *source_object,
   self->ocr_running = FALSE;
 
   if (ocr_result == NULL) {
-    if (self->active_tool == WAYTATOR_TOOL_OCR)
-      waytator_window_show_error(self, error->message);
+    if (self->active_tool == SWASH_TOOL_OCR)
+      swash_window_show_error(self, error->message);
     g_object_unref(self);
     return;
   }
 
   if (ocr_result->generation != self->ocr_generation) {
-    waytator_ocr_result_free(ocr_result);
+    swash_ocr_result_free(ocr_result);
     g_object_unref(self);
     return;
   }
 
-  waytator_window_clear_ocr_widgets(self);
+  swash_window_clear_ocr_widgets(self);
   g_clear_pointer(&self->ocr_lines, g_ptr_array_unref);
   g_clear_pointer(&self->ocr_all_text, g_free);
   self->ocr_lines = ocr_result->lines;
-  self->ocr_all_text = waytator_window_build_ocr_all_text(self->ocr_lines);
+  self->ocr_all_text = swash_window_build_ocr_all_text(self->ocr_lines);
   self->selected_ocr_line = NULL;
   ocr_result->lines = NULL;
-  waytator_window_update_ocr_overlay(self);
-  waytator_window_update_ocr_panel(self);
-  waytator_ocr_result_free(ocr_result);
+  swash_window_update_ocr_overlay(self);
+  swash_window_update_ocr_panel(self);
+  swash_ocr_result_free(ocr_result);
   g_object_unref(self);
 }
 
 void
-waytator_window_maybe_start_ocr(WaytatorWindow *self)
+swash_window_maybe_start_ocr(SwashWindow *self)
 {
   g_autoptr(GTask) task = NULL;
-  WaytatorOcrRequest *request;
+  SwashOcrRequest *request;
 
   if (self->texture == NULL || self->ocr_running || self->ocr_lines != NULL)
     return;
 
-  request = waytator_ocr_request_new(self->texture, self->ocr_generation);
+  request = swash_ocr_request_new(self->texture, self->ocr_generation);
   if (request == NULL)
     return;
 
   self->ocr_running = TRUE;
-  waytator_window_update_ocr_panel(self);
-  task = g_task_new(self, NULL, waytator_window_ocr_ready, g_object_ref(self));
-  g_task_set_task_data(task, request, (GDestroyNotify) waytator_ocr_request_free);
-  g_task_run_in_thread(task, waytator_ocr_run_task);
+  swash_window_update_ocr_panel(self);
+  task = g_task_new(self, NULL, swash_window_ocr_ready, g_object_ref(self));
+  g_task_set_task_data(task, request, (GDestroyNotify) swash_ocr_request_free);
+  g_task_run_in_thread(task, swash_ocr_run_task);
 }
 
-static void waytator_window_save_copy_ready(GObject *source_object, GAsyncResult *result, gpointer user_data);
-static void waytator_window_save_overwrite_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_save_copy_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_rotate_counter_clockwise_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_flip_horizontal_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_flip_vertical_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_copy_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_dismiss_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_close_window_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_copy_clicked(GtkButton *button, gpointer user_data);
-static void waytator_window_open_current_file_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_open_containing_folder_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
-static void waytator_window_open_parent_folder(WaytatorWindow *self);
+static void swash_window_save_copy_ready(GObject *source_object, GAsyncResult *result, gpointer user_data);
+static void swash_window_save_overwrite_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_save_copy_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_rotate_counter_clockwise_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_flip_horizontal_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_flip_vertical_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_copy_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_dismiss_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_close_window_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_copy_clicked(GtkButton *button, gpointer user_data);
+static void swash_window_open_current_file_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_open_containing_folder_action(GtkWidget *widget, const char *action_name, GVariant *parameter);
+static void swash_window_open_parent_folder(SwashWindow *self);
 
 static gboolean
-waytator_window_restore_copy_button(gpointer user_data)
+swash_window_restore_copy_button(gpointer user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   self->copy_feedback_timeout_id = 0;
   gtk_stack_set_visible_child(self->copy_icon_stack, GTK_WIDGET(self->copy_default_icon));
@@ -1386,41 +1386,41 @@ waytator_window_restore_copy_button(gpointer user_data)
 }
 
 void
-waytator_window_trigger_copy(WaytatorWindow *self)
+swash_window_trigger_copy(SwashWindow *self)
 {
   g_autoptr(GError) error = NULL;
   g_autoptr(GTask) task = NULL;
-  WaytatorExportRequest *request;
+  SwashExportRequest *request;
 
   if (self->texture == NULL || self->copy_in_progress)
     return;
 
-  request = waytator_export_request_new(self->texture,
-                                        waytator_window_strokes(self),
-                                        WAYTATOR_EXPORT_COPY,
+  request = swash_export_request_new(self->texture,
+                                        swash_window_strokes(self),
+                                        SWASH_EXPORT_COPY,
                                         NULL,
                                         "png",
-                                        waytator_stroke_copy,
-                                        (GDestroyNotify) waytator_stroke_free,
+                                        swash_stroke_copy,
+                                        (GDestroyNotify) swash_stroke_free,
                                         self->allow_highlighter_overlap,
-                                        waytator_stroke_render,
-                                        waytator_document_get_image_generation(self->document),
+                                        swash_stroke_render,
+                                        swash_document_get_image_generation(self->document),
                                         &error);
   if (request == NULL) {
-    waytator_window_show_error(self, error->message);
+    swash_window_show_error(self, error->message);
     return;
   }
 
   self->copy_in_progress = TRUE;
-  task = g_task_new(self, NULL, waytator_window_copy_export_ready, g_object_ref(self));
-  g_task_set_task_data(task, request, (GDestroyNotify) waytator_export_request_free);
-  g_task_run_in_thread(task, waytator_export_run_task);
+  task = g_task_new(self, NULL, swash_window_copy_export_ready, g_object_ref(self));
+  g_task_set_task_data(task, request, (GDestroyNotify) swash_export_request_free);
+  g_task_run_in_thread(task, swash_export_run_task);
 }
 
 void
-waytator_window_maybe_auto_copy_latest_change(WaytatorWindow *self)
+swash_window_maybe_auto_copy_latest_change(SwashWindow *self)
 {
-  if (!self->auto_copy_latest_change || self->texture == NULL || !waytator_window_has_unsaved_changes(self))
+  if (!self->auto_copy_latest_change || self->texture == NULL || !swash_window_has_unsaved_changes(self))
     return;
 
   if (self->copy_in_progress) {
@@ -1428,25 +1428,25 @@ waytator_window_maybe_auto_copy_latest_change(WaytatorWindow *self)
     return;
   }
 
-  waytator_window_trigger_copy(self);
+  swash_window_trigger_copy(self);
 }
 
 static void
-waytator_window_flash_copy_success(WaytatorWindow *self)
+swash_window_flash_copy_success(SwashWindow *self)
 {
   if (self->copy_feedback_timeout_id != 0)
     g_source_remove(self->copy_feedback_timeout_id);
 
   gtk_stack_set_visible_child(self->copy_icon_stack, GTK_WIDGET(self->copy_success_icon));
   self->copy_feedback_timeout_id = g_timeout_add(1200,
-                                                 waytator_window_restore_copy_button,
+                                                 swash_window_restore_copy_button,
                                                  g_object_ref(self));
 }
 
 void
-waytator_window_reset_save_button(WaytatorWindow *self)
+swash_window_reset_save_button(SwashWindow *self)
 {
-  const gboolean has_unsaved_changes = waytator_window_has_unsaved_changes(self);
+  const gboolean has_unsaved_changes = swash_window_has_unsaved_changes(self);
 
   gtk_stack_set_visible_child(self->save_icon_stack, GTK_WIDGET(self->save_default_icon));
   gtk_widget_set_sensitive(GTK_WIDGET(self->save_button), has_unsaved_changes || self->texture != NULL);
@@ -1455,33 +1455,33 @@ waytator_window_reset_save_button(WaytatorWindow *self)
 }
 
 static gboolean
-waytator_window_restore_save_button(gpointer user_data)
+swash_window_restore_save_button(gpointer user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   self->save_feedback_timeout_id = 0;
-  waytator_window_reset_save_button(self);
+  swash_window_reset_save_button(self);
   g_object_unref(self);
   return G_SOURCE_REMOVE;
 }
 
 static gboolean
-waytator_window_show_save_success(gpointer user_data)
+swash_window_show_save_success(gpointer user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   self->save_spinner_timeout_id = 0;
   gtk_widget_set_sensitive(GTK_WIDGET(self->save_button), FALSE);
   gtk_stack_set_visible_child(self->save_icon_stack, GTK_WIDGET(self->save_success_icon));
   self->save_feedback_timeout_id = g_timeout_add(1200,
-                                                 waytator_window_restore_save_button,
+                                                 swash_window_restore_save_button,
                                                  g_object_ref(self));
   g_object_unref(self);
   return G_SOURCE_REMOVE;
 }
 
 static void
-waytator_window_begin_save_feedback(WaytatorWindow *self)
+swash_window_begin_save_feedback(SwashWindow *self)
 {
   if (self->save_spinner_timeout_id != 0)
     g_source_remove(self->save_spinner_timeout_id);
@@ -1499,7 +1499,7 @@ waytator_window_begin_save_feedback(WaytatorWindow *self)
 }
 
 static void
-waytator_window_finish_save_feedback(WaytatorWindow *self)
+swash_window_finish_save_feedback(SwashWindow *self)
 {
   const gint64 min_spinner_us = 500 * G_TIME_SPAN_MILLISECOND;
   gint64 elapsed = g_get_monotonic_time() - self->save_feedback_started_at;
@@ -1512,13 +1512,13 @@ waytator_window_finish_save_feedback(WaytatorWindow *self)
     delay_ms = (guint) ((min_spinner_us - elapsed + 999) / 1000);
 
   self->save_spinner_timeout_id = g_timeout_add(delay_ms,
-                                                waytator_window_show_save_success,
+                                                swash_window_show_save_success,
                                                 g_object_ref(self));
 }
 
 
 static void
-waytator_window_show_error(WaytatorWindow *self,
+swash_window_show_error(SwashWindow *self,
                            const char     *message)
 {
   g_autoptr(GtkAlertDialog) dialog = gtk_alert_dialog_new("%s", message);
@@ -1527,7 +1527,7 @@ waytator_window_show_error(WaytatorWindow *self,
 }
 
 static char *
-waytator_window_make_copy_name(const char *filename)
+swash_window_make_copy_name(const char *filename)
 {
   const char *dot;
 
@@ -1545,7 +1545,7 @@ waytator_window_make_copy_name(const char *filename)
 }
 
 static gboolean
-waytator_window_error_is_user_dismissed(const GError *error)
+swash_window_error_is_user_dismissed(const GError *error)
 {
   if (error == NULL)
     return FALSE;
@@ -1558,43 +1558,43 @@ waytator_window_error_is_user_dismissed(const GError *error)
 }
 
 static gboolean
-waytator_window_has_unsaved_changes(WaytatorWindow *self)
+swash_window_has_unsaved_changes(SwashWindow *self)
 {
-  return self->texture != NULL && waytator_document_has_unsaved_changes(self->document);
+  return self->texture != NULL && swash_document_has_unsaved_changes(self->document);
 }
 
 static void
-waytator_window_mark_saved(WaytatorWindow *self)
+swash_window_mark_saved(SwashWindow *self)
 {
-  waytator_document_mark_saved(self->document);
+  swash_document_mark_saved(self->document);
 }
 
 void
-waytator_window_update_history_buttons(WaytatorWindow *self)
+swash_window_update_history_buttons(SwashWindow *self)
 {
   const gboolean has_image = self->texture != NULL;
 
-  gtk_widget_set_sensitive(GTK_WIDGET(self->undo_button), has_image && waytator_document_can_undo(self->document));
-  gtk_widget_set_sensitive(GTK_WIDGET(self->redo_button), has_image && waytator_document_can_redo(self->document));
+  gtk_widget_set_sensitive(GTK_WIDGET(self->undo_button), has_image && swash_document_can_undo(self->document));
+  gtk_widget_set_sensitive(GTK_WIDGET(self->redo_button), has_image && swash_document_can_redo(self->document));
 }
 
 void
-waytator_window_clear_history(WaytatorWindow *self)
+swash_window_clear_history(SwashWindow *self)
 {
-  waytator_document_clear_history(self->document);
-  waytator_window_update_history_buttons(self);
+  swash_document_clear_history(self->document);
+  swash_window_update_history_buttons(self);
 }
 
 void
-waytator_window_record_undo_step(WaytatorWindow *self)
+swash_window_record_undo_step(SwashWindow *self)
 {
-  waytator_document_record_undo_step(self->document);
-  waytator_window_reset_save_button(self);
-  waytator_window_update_history_buttons(self);
+  swash_document_record_undo_step(self->document);
+  swash_window_reset_save_button(self);
+  swash_window_update_history_buttons(self);
 }
 
 static GBytes *
-waytator_window_texture_download_bytes(GdkTexture *texture,
+swash_window_texture_download_bytes(GdkTexture *texture,
                                        int        *width,
                                        int        *height,
                                        gsize      *stride)
@@ -1627,7 +1627,7 @@ waytator_window_texture_download_bytes(GdkTexture *texture,
 }
 
 static GBytes *
-waytator_window_surface_copy_bytes(cairo_surface_t *surface,
+swash_window_surface_copy_bytes(cairo_surface_t *surface,
                                    int             *width,
                                    int             *height,
                                    gsize           *stride)
@@ -1654,7 +1654,7 @@ waytator_window_surface_copy_bytes(cairo_surface_t *surface,
 }
 
 static void
-waytator_window_copy_image_bytes_to_surface(cairo_surface_t *surface,
+swash_window_copy_image_bytes_to_surface(cairo_surface_t *surface,
                                             GBytes          *pixels,
                                             gsize            stride)
 {
@@ -1675,7 +1675,7 @@ waytator_window_copy_image_bytes_to_surface(cairo_surface_t *surface,
 }
 
 static gboolean
-waytator_window_refresh_image_from_document(WaytatorWindow *self)
+swash_window_refresh_image_from_document(SwashWindow *self)
 {
   g_autoptr(GBytes) pixels = NULL;
   int width = 0;
@@ -1688,7 +1688,7 @@ waytator_window_refresh_image_from_document(WaytatorWindow *self)
     self->image_surface = NULL;
   }
 
-  if (!waytator_document_get_image(self->document, &pixels, &width, &height, &stride)) {
+  if (!swash_document_get_image(self->document, &pixels, &width, &height, &stride)) {
     gtk_picture_set_paintable(self->picture, NULL);
     return FALSE;
   }
@@ -1699,17 +1699,17 @@ waytator_window_refresh_image_from_document(WaytatorWindow *self)
                                                      pixels,
                                                      stride));
   self->image_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
-  waytator_window_copy_image_bytes_to_surface(self->image_surface, pixels, stride);
+  swash_window_copy_image_bytes_to_surface(self->image_surface, pixels, stride);
   gtk_picture_set_paintable(self->picture, GDK_PAINTABLE(self->texture));
   return TRUE;
 }
 
 cairo_surface_t *
-waytator_window_render_composited_surface(WaytatorWindow *self)
+swash_window_render_composited_surface(SwashWindow *self)
 {
   cairo_surface_t *surface;
   cairo_t *cr;
-  GPtrArray *strokes = waytator_window_strokes(self);
+  GPtrArray *strokes = swash_window_strokes(self);
 
   if (self->texture == NULL)
     return NULL;
@@ -1723,21 +1723,21 @@ waytator_window_render_composited_surface(WaytatorWindow *self)
   cairo_surface_mark_dirty(surface);
 
   cr = cairo_create(surface);
-  waytator_render_strokes(cr,
+  swash_render_strokes(cr,
                           strokes,
                           surface,
                           self->allow_highlighter_overlap,
-                          waytator_stroke_render,
-                          waytator_document_get_image_generation(self->document));
+                          swash_stroke_render,
+                          swash_document_get_image_generation(self->document));
   cairo_destroy(cr);
   cairo_surface_flush(surface);
   return surface;
 }
 
 void
-waytator_window_refresh_document_state(WaytatorWindow *self)
+swash_window_refresh_document_state(SwashWindow *self)
 {
-  waytator_window_refresh_image_from_document(self);
+  swash_window_refresh_image_from_document(self);
   self->current_stroke = NULL;
   self->drawing = FALSE;
   self->interaction_has_undo_step = FALSE;
@@ -1747,15 +1747,15 @@ waytator_window_refresh_document_state(WaytatorWindow *self)
   self->crop_start_y = 0.0;
   self->crop_end_x = 0.0;
   self->crop_end_y = 0.0;
-  waytator_window_clear_ocr_results(self);
-  waytator_window_apply_zoom_mode(self);
-  waytator_window_update_zoom_label(self);
-  waytator_window_sync_state(self);
+  swash_window_clear_ocr_results(self);
+  swash_window_apply_zoom_mode(self);
+  swash_window_update_zoom_label(self);
+  swash_window_sync_state(self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 static void
-waytator_window_log_formats(const char      *label,
+swash_window_log_formats(const char      *label,
                             GdkContentFormats *formats)
 {
   g_autofree char *description = NULL;
@@ -1770,13 +1770,13 @@ waytator_window_log_formats(const char      *label,
 }
 
 static void
-waytator_window_copy_export_ready(GObject      *source_object,
+swash_window_copy_export_ready(GObject      *source_object,
                                   GAsyncResult *result,
                                   gpointer      user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   g_autoptr(GError) error = NULL;
-  WaytatorCopyResult *copy_result;
+  SwashCopyResult *copy_result;
   g_autoptr(GdkContentProvider) provider = NULL;
   g_autoptr(GdkContentProvider) bytes_provider = NULL;
   g_autoptr(GdkContentProvider) texture_provider = NULL;
@@ -1788,10 +1788,10 @@ waytator_window_copy_export_ready(GObject      *source_object,
   copy_result = g_task_propagate_pointer(G_TASK(result), &error);
   self->copy_in_progress = FALSE;
   if (copy_result == NULL) {
-    waytator_window_show_error(self, error->message);
+    swash_window_show_error(self, error->message);
     if (self->auto_copy_pending) {
       self->auto_copy_pending = FALSE;
-      waytator_window_maybe_auto_copy_latest_change(self);
+      swash_window_maybe_auto_copy_latest_change(self);
     }
     g_object_unref(self);
     return;
@@ -1812,31 +1812,31 @@ waytator_window_copy_export_ready(GObject      *source_object,
   }
 
   provider_formats = gdk_content_provider_ref_formats(provider);
-  waytator_window_log_formats("Clipboard provider formats", provider_formats);
+  swash_window_log_formats("Clipboard provider formats", provider_formats);
 
   if (!gdk_clipboard_set_content(clipboard, provider)) {
-    waytator_copy_result_free(copy_result);
-    waytator_window_show_error(self, "Could not copy image to clipboard");
+    swash_copy_result_free(copy_result);
+    swash_window_show_error(self, "Could not copy image to clipboard");
     g_object_unref(self);
     return;
   }
 
-  waytator_window_log_formats("Clipboard accepted formats", gdk_clipboard_get_formats(clipboard));
-  waytator_window_flash_copy_success(self);
-  waytator_copy_result_free(copy_result);
+  swash_window_log_formats("Clipboard accepted formats", gdk_clipboard_get_formats(clipboard));
+  swash_window_flash_copy_success(self);
+  swash_copy_result_free(copy_result);
   if (self->auto_copy_pending) {
     self->auto_copy_pending = FALSE;
-    waytator_window_maybe_auto_copy_latest_change(self);
+    swash_window_maybe_auto_copy_latest_change(self);
   }
   g_object_unref(self);
 }
 
 static void
-waytator_window_save_export_ready(GObject      *source_object,
+swash_window_save_export_ready(GObject      *source_object,
                                   GAsyncResult *result,
                                   gpointer      user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   g_autoptr(GError) error = NULL;
 
   (void) source_object;
@@ -1850,71 +1850,71 @@ waytator_window_save_export_ready(GObject      *source_object,
 
     self->save_spinner_timeout_id = 0;
     self->save_feedback_timeout_id = 0;
-    waytator_window_reset_save_button(self);
-    waytator_window_show_error(self, error->message);
+    swash_window_reset_save_button(self);
+    swash_window_show_error(self, error->message);
     g_object_unref(self);
     return;
   }
 
-  waytator_window_mark_saved(self);
-  waytator_window_finish_save_feedback(self);
+  swash_window_mark_saved(self);
+  swash_window_finish_save_feedback(self);
   g_object_unref(self);
 }
 
 static void
-waytator_window_save_copy_ready(GObject      *source_object,
+swash_window_save_copy_ready(GObject      *source_object,
                                 GAsyncResult *result,
                                 gpointer      user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   g_autoptr(GError) error = NULL;
   g_autoptr(GFile) file = NULL;
   g_autoptr(GTask) task = NULL;
-  WaytatorExportRequest *request;
+  SwashExportRequest *request;
 
   file = gtk_file_dialog_save_finish(GTK_FILE_DIALOG(source_object), result, &error);
   if (file == NULL) {
-    if (!waytator_window_error_is_user_dismissed(error))
-      waytator_window_show_error(self, error->message);
+    if (!swash_window_error_is_user_dismissed(error))
+      swash_window_show_error(self, error->message);
 
     g_object_unref(self);
     return;
   }
 
-  request = waytator_export_request_new(self->texture,
-                                        waytator_window_strokes(self),
-                                        WAYTATOR_EXPORT_SAVE,
+  request = swash_export_request_new(self->texture,
+                                        swash_window_strokes(self),
+                                        SWASH_EXPORT_SAVE,
                                         file,
                                         NULL,
-                                        waytator_stroke_copy,
-                                        (GDestroyNotify) waytator_stroke_free,
+                                        swash_stroke_copy,
+                                        (GDestroyNotify) swash_stroke_free,
                                         self->allow_highlighter_overlap,
-                                        waytator_stroke_render,
-                                        waytator_document_get_image_generation(self->document),
+                                        swash_stroke_render,
+                                        swash_document_get_image_generation(self->document),
                                         &error);
   if (request == NULL) {
-    waytator_window_show_error(self, error->message);
+    swash_window_show_error(self, error->message);
     g_object_unref(self);
     return;
   }
 
-  waytator_window_begin_save_feedback(self);
-  task = g_task_new(self, NULL, waytator_window_save_export_ready, g_object_ref(self));
-  g_task_set_task_data(task, request, (GDestroyNotify) waytator_export_request_free);
-  g_task_run_in_thread(task, waytator_export_run_task);
+  swash_window_begin_save_feedback(self);
+  task = g_task_new(self, NULL, swash_window_save_export_ready, g_object_ref(self));
+  g_task_set_task_data(task, request, (GDestroyNotify) swash_export_request_free);
+  g_task_run_in_thread(task, swash_export_run_task);
 
   g_object_unref(self);
 }
 
 static void
-waytator_window_save_overwrite_action(GtkWidget  *widget,
+swash_window_save_overwrite_action(GtkWidget  *widget,
                                       const char *action_name,
                                       GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   g_autoptr(GError) error = NULL;
   g_autoptr(GTask) task = NULL;
-  WaytatorExportRequest *request;
+  SwashExportRequest *request;
 
   (void) action_name;
   (void) parameter;
@@ -1922,34 +1922,34 @@ waytator_window_save_overwrite_action(GtkWidget  *widget,
   if (self->current_file == NULL)
     return;
 
-  request = waytator_export_request_new(self->texture,
-                                        waytator_window_strokes(self),
-                                        WAYTATOR_EXPORT_SAVE,
+  request = swash_export_request_new(self->texture,
+                                        swash_window_strokes(self),
+                                        SWASH_EXPORT_SAVE,
                                         self->current_file,
                                         NULL,
-                                        waytator_stroke_copy,
-                                        (GDestroyNotify) waytator_stroke_free,
+                                        swash_stroke_copy,
+                                        (GDestroyNotify) swash_stroke_free,
                                         self->allow_highlighter_overlap,
-                                        waytator_stroke_render,
-                                        waytator_document_get_image_generation(self->document),
+                                        swash_stroke_render,
+                                        swash_document_get_image_generation(self->document),
                                         &error);
   if (request == NULL) {
-    waytator_window_show_error(self, error->message);
+    swash_window_show_error(self, error->message);
     return;
   }
 
-  waytator_window_begin_save_feedback(self);
-  task = g_task_new(self, NULL, waytator_window_save_export_ready, g_object_ref(self));
-  g_task_set_task_data(task, request, (GDestroyNotify) waytator_export_request_free);
-  g_task_run_in_thread(task, waytator_export_run_task);
+  swash_window_begin_save_feedback(self);
+  task = g_task_new(self, NULL, swash_window_save_export_ready, g_object_ref(self));
+  g_task_set_task_data(task, request, (GDestroyNotify) swash_export_request_free);
+  g_task_run_in_thread(task, swash_export_run_task);
 }
 
 static void
-waytator_window_save_copy_action(GtkWidget  *widget,
+swash_window_save_copy_action(GtkWidget  *widget,
                                  const char *action_name,
                                  GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   g_autoptr(GtkFileDialog) dialog = gtk_file_dialog_new();
   g_autofree char *basename = NULL;
   g_autofree char *copy_name = NULL;
@@ -1960,7 +1960,7 @@ waytator_window_save_copy_action(GtkWidget  *widget,
   if (self->current_file != NULL)
     basename = g_file_get_basename(self->current_file);
 
-  copy_name = waytator_window_make_copy_name(basename != NULL ? basename : self->source_name);
+  copy_name = swash_window_make_copy_name(basename != NULL ? basename : self->source_name);
 
   gtk_file_dialog_set_title(dialog, "Save as copy");
   gtk_file_dialog_set_initial_name(dialog, copy_name);
@@ -1968,12 +1968,12 @@ waytator_window_save_copy_action(GtkWidget  *widget,
   gtk_file_dialog_save(dialog,
                        GTK_WINDOW(self),
                        NULL,
-                       waytator_window_save_copy_ready,
+                       swash_window_save_copy_ready,
                        g_object_ref(self));
 }
 
 static void
-waytator_window_commit_transformed_surface(WaytatorWindow  *self,
+swash_window_commit_transformed_surface(SwashWindow  *self,
                                            cairo_surface_t *surface)
 {
   g_autoptr(GBytes) pixels = NULL;
@@ -1981,17 +1981,17 @@ waytator_window_commit_transformed_surface(WaytatorWindow  *self,
   int height = 0;
   gsize stride = 0;
 
-  pixels = waytator_window_surface_copy_bytes(surface, &width, &height, &stride);
+  pixels = swash_window_surface_copy_bytes(surface, &width, &height, &stride);
   if (pixels == NULL)
     return;
 
-  waytator_document_set_image(self->document, pixels, width, height, stride);
-  waytator_document_clear_annotations(self->document);
-  waytator_window_restore_strokes(self, waytator_window_strokes(self));
+  swash_document_set_image(self->document, pixels, width, height, stride);
+  swash_document_clear_annotations(self->document);
+  swash_window_restore_strokes(self, swash_window_strokes(self));
 }
 
 void
-waytator_window_apply_crop(WaytatorWindow *self,
+swash_window_apply_crop(SwashWindow *self,
                            int             left,
                            int             top,
                            int             width,
@@ -2004,7 +2004,7 @@ waytator_window_apply_crop(WaytatorWindow *self,
   if (self->texture == NULL || width <= 0 || height <= 0)
     return;
 
-  source_surface = waytator_window_render_composited_surface(self);
+  source_surface = swash_window_render_composited_surface(self);
   if (source_surface == NULL)
     return;
 
@@ -2015,17 +2015,17 @@ waytator_window_apply_crop(WaytatorWindow *self,
   cairo_destroy(cr);
   cairo_surface_destroy(source_surface);
 
-  waytator_window_record_undo_step(self);
-  waytator_window_commit_transformed_surface(self, result_surface);
+  swash_window_record_undo_step(self);
+  swash_window_commit_transformed_surface(self, result_surface);
   cairo_surface_destroy(result_surface);
 }
 
 static void
-waytator_window_rotate_counter_clockwise_action(GtkWidget  *widget,
+swash_window_rotate_counter_clockwise_action(GtkWidget  *widget,
                                                 const char *action_name,
                                                 GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   cairo_surface_t *source_surface;
   cairo_surface_t *result_surface;
   cairo_t *cr;
@@ -2038,7 +2038,7 @@ waytator_window_rotate_counter_clockwise_action(GtkWidget  *widget,
   if (width <= 0 || height <= 0)
     return;
 
-  source_surface = waytator_window_render_composited_surface(self);
+  source_surface = swash_window_render_composited_surface(self);
   if (source_surface == NULL)
     return;
 
@@ -2051,17 +2051,17 @@ waytator_window_rotate_counter_clockwise_action(GtkWidget  *widget,
   cairo_destroy(cr);
   cairo_surface_destroy(source_surface);
 
-  waytator_window_record_undo_step(self);
-  waytator_window_commit_transformed_surface(self, result_surface);
+  swash_window_record_undo_step(self);
+  swash_window_commit_transformed_surface(self, result_surface);
   cairo_surface_destroy(result_surface);
 }
 
 static void
-waytator_window_flip_horizontal_action(GtkWidget  *widget,
+swash_window_flip_horizontal_action(GtkWidget  *widget,
                                        const char *action_name,
                                        GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   cairo_surface_t *source_surface;
   cairo_surface_t *result_surface;
   cairo_t *cr;
@@ -2074,7 +2074,7 @@ waytator_window_flip_horizontal_action(GtkWidget  *widget,
   if (width <= 0 || height <= 0)
     return;
 
-  source_surface = waytator_window_render_composited_surface(self);
+  source_surface = swash_window_render_composited_surface(self);
   if (source_surface == NULL)
     return;
 
@@ -2087,17 +2087,17 @@ waytator_window_flip_horizontal_action(GtkWidget  *widget,
   cairo_destroy(cr);
   cairo_surface_destroy(source_surface);
 
-  waytator_window_record_undo_step(self);
-  waytator_window_commit_transformed_surface(self, result_surface);
+  swash_window_record_undo_step(self);
+  swash_window_commit_transformed_surface(self, result_surface);
   cairo_surface_destroy(result_surface);
 }
 
 static void
-waytator_window_flip_vertical_action(GtkWidget  *widget,
+swash_window_flip_vertical_action(GtkWidget  *widget,
                                      const char *action_name,
                                      GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   cairo_surface_t *source_surface;
   cairo_surface_t *result_surface;
   cairo_t *cr;
@@ -2110,7 +2110,7 @@ waytator_window_flip_vertical_action(GtkWidget  *widget,
   if (width <= 0 || height <= 0)
     return;
 
-  source_surface = waytator_window_render_composited_surface(self);
+  source_surface = swash_window_render_composited_surface(self);
   if (source_surface == NULL)
     return;
 
@@ -2123,17 +2123,17 @@ waytator_window_flip_vertical_action(GtkWidget  *widget,
   cairo_destroy(cr);
   cairo_surface_destroy(source_surface);
 
-  waytator_window_record_undo_step(self);
-  waytator_window_commit_transformed_surface(self, result_surface);
+  swash_window_record_undo_step(self);
+  swash_window_commit_transformed_surface(self, result_surface);
   cairo_surface_destroy(result_surface);
 }
 
 static void
-waytator_window_copy_action(GtkWidget  *widget,
+swash_window_copy_action(GtkWidget  *widget,
                             const char *action_name,
                             GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
 
   (void) action_name;
   (void) parameter;
@@ -2145,21 +2145,21 @@ waytator_window_copy_action(GtkWidget  *widget,
 }
 
 static void
-waytator_window_dismiss_action(GtkWidget  *widget,
+swash_window_dismiss_action(GtkWidget  *widget,
                                const char *action_name,
                                GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
 
   (void) action_name;
   (void) parameter;
 
   if (adw_bottom_sheet_get_open(self->ocr_panel_bottom_sheet))
-    waytator_window_set_ocr_panel_visible(self, FALSE);
+    swash_window_set_ocr_panel_visible(self, FALSE);
 }
 
 static void
-waytator_window_close_window_action(GtkWidget  *widget,
+swash_window_close_window_action(GtkWidget  *widget,
                                     const char *action_name,
                                     GVariant   *parameter)
 {
@@ -2170,28 +2170,28 @@ waytator_window_close_window_action(GtkWidget  *widget,
 }
 
 static void
-waytator_window_copy_clicked(GtkButton *button,
+swash_window_copy_clicked(GtkButton *button,
                              gpointer   user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) button;
 
-  waytator_window_trigger_copy(self);
+  swash_window_trigger_copy(self);
 }
 
 static void
-waytator_window_clear_annotations(WaytatorWindow *self)
+swash_window_clear_annotations(SwashWindow *self)
 {
-  waytator_document_clear_annotations(self->document);
+  swash_document_clear_annotations(self->document);
   self->current_stroke = NULL;
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
-  waytator_window_update_history_buttons(self);
-  waytator_window_maybe_auto_copy_latest_change(self);
+  swash_window_update_history_buttons(self);
+  swash_window_maybe_auto_copy_latest_change(self);
 }
 
 static void
-waytator_window_clear_image(WaytatorWindow *self)
+swash_window_clear_image(SwashWindow *self)
 {
   g_clear_object(&self->current_file);
   g_clear_object(&self->texture);
@@ -2204,19 +2204,19 @@ waytator_window_clear_image(WaytatorWindow *self)
   self->crop_start_y = 0.0;
   self->crop_end_x = 0.0;
   self->crop_end_y = 0.0;
-  waytator_document_set_image(self->document, NULL, 0, 0, 0);
-  waytator_window_clear_ocr_results(self);
-  waytator_window_clear_history(self);
-  waytator_window_clear_annotations(self);
-  waytator_window_mark_saved(self);
+  swash_document_set_image(self->document, NULL, 0, 0, 0);
+  swash_window_clear_ocr_results(self);
+  swash_window_clear_history(self);
+  swash_window_clear_annotations(self);
+  swash_window_mark_saved(self);
   gtk_picture_set_paintable(self->picture, NULL);
   self->fit_mode = TRUE;
-  waytator_window_update_picture_size(self);
-  waytator_window_sync_state(self);
+  swash_window_update_picture_size(self);
+  swash_window_sync_state(self);
 }
 
 static void
-waytator_window_set_image(WaytatorWindow *self,
+swash_window_set_image(SwashWindow *self,
                           GdkTexture     *texture,
                           GFile          *file,
                           const char     *display_name)
@@ -2226,15 +2226,15 @@ waytator_window_set_image(WaytatorWindow *self,
   int height = 0;
   gsize stride = 0;
 
-  waytator_window_clear_image(self);
+  swash_window_clear_image(self);
 
   self->current_file = file != NULL ? g_object_ref(file) : NULL;
-  pixels = waytator_window_texture_download_bytes(texture, &width, &height, &stride);
+  pixels = swash_window_texture_download_bytes(texture, &width, &height, &stride);
   if (pixels == NULL)
     return;
 
-  waytator_document_set_image(self->document, pixels, width, height, stride);
-  waytator_window_refresh_image_from_document(self);
+  swash_document_set_image(self->document, pixels, width, height, stride);
+  swash_window_refresh_image_from_document(self);
 
   self->source_name = g_strdup(display_name != NULL ? display_name : "image.png");
 
@@ -2244,26 +2244,26 @@ waytator_window_set_image(WaytatorWindow *self,
   self->drawing = FALSE;
   self->current_stroke = NULL;
   self->ocr_running = FALSE;
-  waytator_window_mark_saved(self);
+  swash_window_mark_saved(self);
 
-  waytator_window_sync_state(self);
-  waytator_window_queue_fit_zoom(self);
+  swash_window_sync_state(self);
+  swash_window_queue_fit_zoom(self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 gboolean
-waytator_window_open_file(WaytatorWindow *self,
+swash_window_open_file(SwashWindow *self,
                           GFile          *file,
                           GError        **error)
 {
   g_autofree char *basename = NULL;
   g_autoptr(GdkTexture) texture = NULL;
 
-  g_return_val_if_fail(WAYTATOR_IS_WINDOW(self), FALSE);
+  g_return_val_if_fail(SWASH_IS_WINDOW(self), FALSE);
   g_return_val_if_fail(file == NULL || G_IS_FILE(file), FALSE);
 
   if (file == NULL) {
-    waytator_window_clear_image(self);
+    swash_window_clear_image(self);
     return TRUE;
   }
 
@@ -2272,26 +2272,26 @@ waytator_window_open_file(WaytatorWindow *self,
     return FALSE;
 
   basename = g_file_get_basename(file);
-  waytator_window_set_image(self, texture, file, basename);
+  swash_window_set_image(self, texture, file, basename);
   return TRUE;
 }
 
 gboolean
-waytator_window_open_bytes(WaytatorWindow *self,
+swash_window_open_bytes(SwashWindow *self,
                            GBytes         *bytes,
                            const char     *display_name,
                            GError        **error)
 {
   g_autoptr(GdkTexture) texture = NULL;
 
-  g_return_val_if_fail(WAYTATOR_IS_WINDOW(self), FALSE);
+  g_return_val_if_fail(SWASH_IS_WINDOW(self), FALSE);
   g_return_val_if_fail(bytes != NULL, FALSE);
 
   texture = gdk_texture_new_from_bytes(bytes, error);
   if (texture == NULL)
     return FALSE;
 
-  waytator_window_set_image(self,
+  swash_window_set_image(self,
                             texture,
                             NULL,
                             display_name != NULL ? display_name : "stdin.png");
@@ -2299,32 +2299,32 @@ waytator_window_open_bytes(WaytatorWindow *self,
 }
 
 static void
-waytator_window_open_ready(GObject      *source_object,
+swash_window_open_ready(GObject      *source_object,
                            GAsyncResult *result,
                            gpointer      user_data)
 {
   g_autoptr(GError) error = NULL;
   g_autoptr(GFile) file = NULL;
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(source_object), result, &error);
 
   if (file == NULL) {
-    if (!waytator_window_error_is_user_dismissed(error))
+    if (!swash_window_error_is_user_dismissed(error))
       g_printerr("Error opening file: %s\n", error->message);
 
     g_object_unref(self);
     return;
   }
 
-  if (!waytator_window_open_file(self, file, &error))
-    waytator_window_show_error(self, error->message);
+  if (!swash_window_open_file(self, file, &error))
+    swash_window_show_error(self, error->message);
 
   g_object_unref(self);
 }
 
 static void
-waytator_window_open(WaytatorWindow *self)
+swash_window_open(SwashWindow *self)
 {
   g_autoptr(GtkFileDialog) dialog = NULL;
   g_autoptr(GtkFileFilter) images = NULL;
@@ -2350,42 +2350,42 @@ waytator_window_open(WaytatorWindow *self)
   gtk_file_dialog_open(dialog,
                        GTK_WINDOW(self),
                        NULL,
-                       waytator_window_open_ready,
+                       swash_window_open_ready,
                        g_object_ref(self));
 }
 
 static void
-waytator_window_open_action(GtkWidget  *widget,
+swash_window_open_action(GtkWidget  *widget,
                             const char *action_name,
                             GVariant   *parameter)
 {
   (void) action_name;
   (void) parameter;
 
-  waytator_window_open(WAYTATOR_WINDOW(widget));
+  swash_window_open(SWASH_WINDOW(widget));
 }
 
 static void
-waytator_window_open_current_file_ready(GObject      *source_object,
+swash_window_open_current_file_ready(GObject      *source_object,
                                         GAsyncResult *result,
                                         gpointer      user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   g_autoptr(GError) error = NULL;
 
   if (!gtk_file_launcher_launch_finish(GTK_FILE_LAUNCHER(source_object), result, &error)
-      && !waytator_window_error_is_user_dismissed(error))
-    waytator_window_show_error(self, error->message);
+      && !swash_window_error_is_user_dismissed(error))
+    swash_window_show_error(self, error->message);
 
   g_object_unref(self);
 }
 
 static void
-waytator_window_open_current_file_action(GtkWidget  *widget,
+swash_window_open_current_file_action(GtkWidget  *widget,
                                          const char *action_name,
                                          GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   g_autoptr(GtkFileLauncher) launcher = NULL;
 
   (void) action_name;
@@ -2398,12 +2398,12 @@ waytator_window_open_current_file_action(GtkWidget  *widget,
   gtk_file_launcher_launch(launcher,
                            GTK_WINDOW(self),
                            NULL,
-                           waytator_window_open_current_file_ready,
+                           swash_window_open_current_file_ready,
                            g_object_ref(self));
 }
 
 static void
-waytator_window_open_parent_folder(WaytatorWindow *self)
+swash_window_open_parent_folder(SwashWindow *self)
 {
   g_autoptr(GtkFileLauncher) launcher = NULL;
   g_autoptr(GFile) parent = NULL;
@@ -2419,16 +2419,16 @@ waytator_window_open_parent_folder(WaytatorWindow *self)
   gtk_file_launcher_launch(launcher,
                            GTK_WINDOW(self),
                            NULL,
-                           waytator_window_open_current_file_ready,
+                           swash_window_open_current_file_ready,
                            g_object_ref(self));
 }
 
 static void
-waytator_window_open_containing_folder_action(GtkWidget  *widget,
+swash_window_open_containing_folder_action(GtkWidget  *widget,
                                               const char *action_name,
                                               GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   g_autoptr(GDBusConnection) bus = NULL;
   g_autoptr(GError) error = NULL;
   g_autofree char *uri = NULL;
@@ -2446,7 +2446,7 @@ waytator_window_open_containing_folder_action(GtkWidget  *widget,
   bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
   if (bus == NULL) {
     g_clear_error(&error);
-    waytator_window_open_parent_folder(self);
+    swash_window_open_parent_folder(self);
     return;
   }
   //if a file manager supporting the FileManager1 D-Bus interface is available
@@ -2464,16 +2464,16 @@ waytator_window_open_containing_folder_action(GtkWidget  *widget,
                                    NULL,
                                    &error)) {
     g_clear_error(&error);
-    waytator_window_open_parent_folder(self);
+    swash_window_open_parent_folder(self);
   }
 }
 
 static void
-waytator_window_dispose(GObject *object)
+swash_window_dispose(GObject *object)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(object);
+  SwashWindow *self = SWASH_WINDOW(object);
 
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
 
   if (self->text_cursor_blink_id != 0) {
     g_source_remove(self->text_cursor_blink_id);
@@ -2487,16 +2487,16 @@ waytator_window_dispose(GObject *object)
     cairo_surface_destroy(self->image_surface);
     self->image_surface = NULL;
   }
-  waytator_window_clear_ocr_results(self);
-  waytator_window_clear_annotations(self);
+  swash_window_clear_ocr_results(self);
+  swash_window_clear_annotations(self);
   if (self->copy_feedback_timeout_id != 0)
     g_source_remove(self->copy_feedback_timeout_id);
   if (self->save_spinner_timeout_id != 0)
     g_source_remove(self->save_spinner_timeout_id);
   if (self->save_feedback_timeout_id != 0)
     g_source_remove(self->save_feedback_timeout_id);
-  waytator_window_clear_history(self);
-  g_clear_pointer(&self->document, waytator_document_free);
+  swash_window_clear_history(self);
+  g_clear_pointer(&self->document, swash_document_free);
   g_clear_object(&self->start_window_controls_children);
   g_clear_object(&self->end_window_controls_children);
   if (self->window_css_provider != NULL && gdk_display_get_default() != NULL)
@@ -2511,111 +2511,111 @@ waytator_window_dispose(GObject *object)
   g_clear_pointer(&self->active_touch_sequences, g_hash_table_unref);
   g_clear_pointer(&self->touch_tap_points, g_hash_table_unref);
 
-  G_OBJECT_CLASS(waytator_window_parent_class)->dispose(object);
+  G_OBJECT_CLASS(swash_window_parent_class)->dispose(object);
 }
 
 static void
-waytator_window_bind_template_children(GtkWidgetClass *widget_class)
+swash_window_bind_template_children(GtkWidgetClass *widget_class)
 {
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, canvas_stack);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, canvas_scroller);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, empty_page);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, canvas_surface);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, picture);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, drawing_area);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_overlay);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_panel_bottom_sheet);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_panel);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_panel_toggle_container);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_panel_toggle_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_panel_close_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_panel_stack);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_panel_tabs);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_selected_page);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_all_page);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_selected_text_view);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_all_text_view);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, start_actions);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, start_window_controls_pill);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, start_window_controls);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, open_actions);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, file_group);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, file_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, file_label);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, zoom_label);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, tool_group);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, pan_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, crop_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, brush_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, highlighter_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, eraser_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, rectangle_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, circle_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, line_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, arrow_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, ocr_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, text_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, blur_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, numbering_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, move_tool_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, rotate_counter_clockwise_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, flip_horizontal_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, flip_vertical_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, history_actions);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, undo_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, redo_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, document_actions);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, save_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, save_icon_stack);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, save_default_icon);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, save_working_icon);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, save_success_icon);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, copy_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, app_menu_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, end_window_controls);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, copy_icon_stack);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, copy_default_icon);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, copy_success_icon);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, zoom_group);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, fit_zoom_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, settings_group);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, color_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, fill_color_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, width_scale);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, size_button);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, size_button_label);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, text_size_spin);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, precise_size_spin);
-  gtk_widget_class_bind_template_child(widget_class, WaytatorWindow, blur_type_dropdown);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, canvas_stack);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, canvas_scroller);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, empty_page);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, canvas_surface);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, picture);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, drawing_area);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_overlay);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_panel_bottom_sheet);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_panel);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_panel_toggle_container);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_panel_toggle_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_panel_close_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_panel_stack);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_panel_tabs);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_selected_page);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_all_page);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_selected_text_view);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_all_text_view);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, start_actions);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, start_window_controls_pill);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, start_window_controls);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, open_actions);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, file_group);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, file_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, file_label);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, zoom_label);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, tool_group);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, pan_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, crop_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, brush_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, highlighter_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, eraser_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, rectangle_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, circle_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, line_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, arrow_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, ocr_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, text_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, blur_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, numbering_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, move_tool_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, rotate_counter_clockwise_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, flip_horizontal_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, flip_vertical_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, history_actions);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, undo_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, redo_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, document_actions);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, save_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, save_icon_stack);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, save_default_icon);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, save_working_icon);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, save_success_icon);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, copy_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, app_menu_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, end_window_controls);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, copy_icon_stack);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, copy_default_icon);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, copy_success_icon);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, zoom_group);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, fit_zoom_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, settings_group);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, color_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, fill_color_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, width_scale);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, size_button);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, size_button_label);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, text_size_spin);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, precise_size_spin);
+  gtk_widget_class_bind_template_child(widget_class, SwashWindow, blur_type_dropdown);
 }
 
 static void
-waytator_window_install_actions(GtkWidgetClass *widget_class)
+swash_window_install_actions(GtkWidgetClass *widget_class)
 {
-  gtk_widget_class_install_action(widget_class, "win.open", NULL, waytator_window_open_action);
-  gtk_widget_class_install_action(widget_class, "win.open-current-file", NULL, waytator_window_open_current_file_action);
-  gtk_widget_class_install_action(widget_class, "win.open-containing-folder", NULL, waytator_window_open_containing_folder_action);
-  gtk_widget_class_install_action(widget_class, "win.copy-buffer", NULL, waytator_window_copy_action);
-  gtk_widget_class_install_action(widget_class, "win.dismiss", NULL, waytator_window_dismiss_action);
-  gtk_widget_class_install_action(widget_class, "win.close-window", NULL, waytator_window_close_window_action);
-  gtk_widget_class_install_action(widget_class, "win.save", NULL, waytator_window_save_overwrite_action);
-  gtk_widget_class_install_action(widget_class, "win.save-copy", NULL, waytator_window_save_copy_action);
-  gtk_widget_class_install_action(widget_class, "win.rotate-counter-clockwise", NULL, waytator_window_rotate_counter_clockwise_action);
-  gtk_widget_class_install_action(widget_class, "win.flip-horizontal", NULL, waytator_window_flip_horizontal_action);
-  gtk_widget_class_install_action(widget_class, "win.flip-vertical", NULL, waytator_window_flip_vertical_action);
-  gtk_widget_class_install_action(widget_class, "win.preferences", NULL, waytator_window_preferences_action);
-  gtk_widget_class_install_action(widget_class, "win.about", NULL, waytator_window_about_action);
-  waytator_window_install_canvas_actions(widget_class);
+  gtk_widget_class_install_action(widget_class, "win.open", NULL, swash_window_open_action);
+  gtk_widget_class_install_action(widget_class, "win.open-current-file", NULL, swash_window_open_current_file_action);
+  gtk_widget_class_install_action(widget_class, "win.open-containing-folder", NULL, swash_window_open_containing_folder_action);
+  gtk_widget_class_install_action(widget_class, "win.copy-buffer", NULL, swash_window_copy_action);
+  gtk_widget_class_install_action(widget_class, "win.dismiss", NULL, swash_window_dismiss_action);
+  gtk_widget_class_install_action(widget_class, "win.close-window", NULL, swash_window_close_window_action);
+  gtk_widget_class_install_action(widget_class, "win.save", NULL, swash_window_save_overwrite_action);
+  gtk_widget_class_install_action(widget_class, "win.save-copy", NULL, swash_window_save_copy_action);
+  gtk_widget_class_install_action(widget_class, "win.rotate-counter-clockwise", NULL, swash_window_rotate_counter_clockwise_action);
+  gtk_widget_class_install_action(widget_class, "win.flip-horizontal", NULL, swash_window_flip_horizontal_action);
+  gtk_widget_class_install_action(widget_class, "win.flip-vertical", NULL, swash_window_flip_vertical_action);
+  gtk_widget_class_install_action(widget_class, "win.preferences", NULL, swash_window_preferences_action);
+  gtk_widget_class_install_action(widget_class, "win.about", NULL, swash_window_about_action);
+  swash_window_install_canvas_actions(widget_class);
 }
 
 static void
-waytator_window_init_state(WaytatorWindow *self)
+swash_window_init_state(SwashWindow *self)
 {
   self->zoom = 1.0;
   self->fit_mode = TRUE;
-  self->active_tool = WAYTATOR_TOOL_BRUSH;
+  self->active_tool = SWASH_TOOL_BRUSH;
   self->drawing = FALSE;
-  self->document = waytator_document_new();
+  self->document = swash_document_new();
   self->active_touch_sequences = g_hash_table_new(g_direct_hash, g_direct_equal);
   self->touch_tap_points = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
   self->ocr_lines = NULL;
@@ -2623,8 +2623,8 @@ waytator_window_init_state(WaytatorWindow *self)
   self->ocr_all_text = NULL;
   self->pinch_start_zoom = 1.0;
   self->pointer_in = FALSE;
-  self->eraser_style = WAYTATOR_ERASER_STYLE_DUAL_RING;
-  self->window_background_mode = WAYTATOR_WINDOW_BACKGROUND_OPAQUE;
+  self->eraser_style = SWASH_ERASER_STYLE_DUAL_RING;
+  self->window_background_mode = SWASH_WINDOW_BACKGROUND_OPAQUE;
   self->window_background_opacity = 0.8;
   self->esc_closes_window = TRUE;
   self->copy_shortcut_enabled = TRUE;
@@ -2633,54 +2633,54 @@ waytator_window_init_state(WaytatorWindow *self)
   self->floating_controls_blur = TRUE;
   self->auto_copy_latest_change = FALSE;
   self->floating_controls_opacity = 0.7;
-  waytator_window_apply_copy_shortcut(self, "<Primary>c");
-  waytator_window_load_preferences(self);
+  swash_window_apply_copy_shortcut(self, "<Primary>c");
+  swash_window_load_preferences(self);
 
-  for (int i = 0; i <= WAYTATOR_TOOL_MOVE; i++)
-    self->tool_widths[i] = waytator_tool_width(i);
+  for (int i = 0; i <= SWASH_TOOL_MOVE; i++)
+    self->tool_widths[i] = swash_tool_width(i);
 
-  waytator_window_apply_default_tool_colors(self);
-  waytator_window_load_state(self);
+  swash_window_apply_default_tool_colors(self);
+  swash_window_load_state(self);
 }
 
 static void
-waytator_window_setup_window_background(WaytatorWindow *self)
+swash_window_setup_window_background(SwashWindow *self)
 {
   self->window_css_provider = gtk_css_provider_new();
   self->widget_css_provider = gtk_css_provider_new();
-  gtk_widget_add_css_class(GTK_WIDGET(self), "waytator-window");
+  gtk_widget_add_css_class(GTK_WIDGET(self), "window");
   gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                              GTK_STYLE_PROVIDER(self->window_css_provider),
-                                             WAYTATOR_WINDOW_STYLE_PROVIDER_PRIORITY); 
+                                             SWASH_WINDOW_STYLE_PROVIDER_PRIORITY); 
   gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                              GTK_STYLE_PROVIDER(self->widget_css_provider),
-                                             WAYTATOR_WINDOW_STYLE_PROVIDER_PRIORITY);
-  waytator_window_update_window_background(self);
-  waytator_window_update_widget_appearance(self);
+                                             SWASH_WINDOW_STYLE_PROVIDER_PRIORITY);
+  swash_window_update_window_background(self);
+  swash_window_update_widget_appearance(self);
 }
 
 static void
-waytator_window_ensure_icons_registered(void)
+swash_window_ensure_icons_registered(void)
 {
   static gboolean icons_registered = FALSE;
 
   if (!icons_registered) {
     GtkIconTheme *icon_theme = gtk_icon_theme_get_for_display(gdk_display_get_default());
 
-    gtk_icon_theme_add_resource_path(icon_theme, WAYTATOR_RESOURCE_PREFIX "/icons/hicolor");
+    gtk_icon_theme_add_resource_path(icon_theme, SWASH_RESOURCE_PREFIX "/icons/hicolor");
     icons_registered = TRUE;
   }
 }
 
 static void
-waytator_window_ensure_css_loaded(void)
+swash_window_ensure_css_loaded(void)
 {
   static gboolean css_loaded = FALSE;
 
   if (!css_loaded) {
     GtkCssProvider *provider = gtk_css_provider_new();
 
-    gtk_css_provider_load_from_resource(provider, WAYTATOR_RESOURCE_PREFIX "/ui/style.css");
+    gtk_css_provider_load_from_resource(provider, SWASH_RESOURCE_PREFIX "/ui/style.css");
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(provider),
                                                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -2691,7 +2691,7 @@ waytator_window_ensure_css_loaded(void)
 }
 
 static void
-waytator_window_setup_ocr_panel(WaytatorWindow *self)
+swash_window_setup_ocr_panel(SwashWindow *self)
 {
   gtk_text_view_set_monospace(self->ocr_selected_text_view, FALSE);
   gtk_text_view_set_monospace(self->ocr_all_text_view, FALSE);
@@ -2703,25 +2703,25 @@ waytator_window_setup_ocr_panel(WaytatorWindow *self)
 }
 
 static void
-waytator_window_setup_window_controls(WaytatorWindow *self)
+swash_window_setup_window_controls(SwashWindow *self)
 {
   self->start_window_controls_children = gtk_widget_observe_children(GTK_WIDGET(self->start_window_controls));
   self->end_window_controls_children = gtk_widget_observe_children(GTK_WIDGET(self->end_window_controls));
 
   g_signal_connect(self->start_window_controls_children,
                    "items-changed",
-                   G_CALLBACK(waytator_window_window_controls_changed),
+                   G_CALLBACK(swash_window_window_controls_changed),
                    self);
   g_signal_connect(self->end_window_controls_children,
                    "items-changed",
-                   G_CALLBACK(waytator_window_window_controls_changed),
+                   G_CALLBACK(swash_window_window_controls_changed),
                    self);
 
-  waytator_window_update_window_controls(self);
+  swash_window_update_window_controls(self);
 }
 
 static void
-waytator_window_setup_menu_button_popover(GtkMenuButton   *button,
+swash_window_setup_menu_button_popover(GtkMenuButton   *button,
                                           GtkArrowType     direction,
                                           GtkPositionType  position)
 {
@@ -2749,63 +2749,63 @@ waytator_window_setup_menu_button_popover(GtkMenuButton   *button,
 }
 
 static void
-waytator_window_setup_popovers(WaytatorWindow *self)
+swash_window_setup_popovers(SwashWindow *self)
 {
-  waytator_window_setup_menu_button_popover(self->save_button,
+  swash_window_setup_menu_button_popover(self->save_button,
                                             GTK_ARROW_DOWN,
                                             GTK_POS_BOTTOM);
-  waytator_window_setup_menu_button_popover(self->app_menu_button,
+  swash_window_setup_menu_button_popover(self->app_menu_button,
                                             GTK_ARROW_DOWN,
                                             GTK_POS_BOTTOM);
-  waytator_window_setup_menu_button_popover(self->file_button,
+  swash_window_setup_menu_button_popover(self->file_button,
                                             GTK_ARROW_UP,
                                             GTK_POS_TOP);
-  waytator_window_setup_menu_button_popover(self->size_button,
+  swash_window_setup_menu_button_popover(self->size_button,
                                             GTK_ARROW_UP,
                                             GTK_POS_TOP);
 }
 
 static void
-waytator_window_class_init(WaytatorWindowClass *klass)
+swash_window_class_init(SwashWindowClass *klass)
 {
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
   GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-  object_class->dispose = waytator_window_dispose;
+  object_class->dispose = swash_window_dispose;
 
-  gtk_widget_class_set_template_from_resource(widget_class, WAYTATOR_RESOURCE_PREFIX "/ui/window.ui");
+  gtk_widget_class_set_template_from_resource(widget_class, SWASH_RESOURCE_PREFIX "/ui/window.ui");
 
-  waytator_window_bind_template_children(widget_class);
-  waytator_window_install_actions(widget_class);
+  swash_window_bind_template_children(widget_class);
+  swash_window_install_actions(widget_class);
 }
 
 static GtkToggleButton *
-waytator_window_button_for_tool(WaytatorWindow *self,
-                                WaytatorTool    tool)
+swash_window_button_for_tool(SwashWindow *self,
+                                SwashTool    tool)
 {
   switch (tool) {
-  case WAYTATOR_TOOL_PAN:       return self->pan_tool_button;
-  case WAYTATOR_TOOL_CROP:      return self->crop_tool_button;
-  case WAYTATOR_TOOL_BRUSH:     return self->brush_tool_button;
-  case WAYTATOR_TOOL_MARKER:    return self->highlighter_tool_button;
-  case WAYTATOR_TOOL_ERASER:    return self->eraser_tool_button;
-  case WAYTATOR_TOOL_RECTANGLE: return self->rectangle_tool_button;
-  case WAYTATOR_TOOL_CIRCLE:    return self->circle_tool_button;
-  case WAYTATOR_TOOL_LINE:      return self->line_tool_button;
-  case WAYTATOR_TOOL_ARROW:     return self->arrow_tool_button;
-  case WAYTATOR_TOOL_OCR:       return self->ocr_tool_button;
-  case WAYTATOR_TOOL_TEXT:      return self->text_tool_button;
-  case WAYTATOR_TOOL_BLUR:      return self->blur_tool_button;
-  case WAYTATOR_TOOL_NUMBERING: return self->numbering_tool_button;
-  case WAYTATOR_TOOL_MOVE:      return self->move_tool_button;
+  case SWASH_TOOL_PAN:       return self->pan_tool_button;
+  case SWASH_TOOL_CROP:      return self->crop_tool_button;
+  case SWASH_TOOL_BRUSH:     return self->brush_tool_button;
+  case SWASH_TOOL_MARKER:    return self->highlighter_tool_button;
+  case SWASH_TOOL_ERASER:    return self->eraser_tool_button;
+  case SWASH_TOOL_RECTANGLE: return self->rectangle_tool_button;
+  case SWASH_TOOL_CIRCLE:    return self->circle_tool_button;
+  case SWASH_TOOL_LINE:      return self->line_tool_button;
+  case SWASH_TOOL_ARROW:     return self->arrow_tool_button;
+  case SWASH_TOOL_OCR:       return self->ocr_tool_button;
+  case SWASH_TOOL_TEXT:      return self->text_tool_button;
+  case SWASH_TOOL_BLUR:      return self->blur_tool_button;
+  case SWASH_TOOL_NUMBERING: return self->numbering_tool_button;
+  case SWASH_TOOL_MOVE:      return self->move_tool_button;
   default:                      return self->brush_tool_button;
   }
 }
 
 static void
-waytator_window_activate_tool_button(WaytatorWindow *self)
+swash_window_activate_tool_button(SwashWindow *self)
 {
-  GtkToggleButton *button = waytator_window_button_for_tool(self, self->active_tool);
+  GtkToggleButton *button = swash_window_button_for_tool(self, self->active_tool);
 
   if (button != NULL && !gtk_toggle_button_get_active(button))
     gtk_toggle_button_set_active(button, TRUE);
@@ -2814,51 +2814,51 @@ waytator_window_activate_tool_button(WaytatorWindow *self)
   gtk_range_set_value(GTK_RANGE(self->width_scale), self->tool_widths[self->active_tool]);
   gtk_color_dialog_button_set_rgba(self->color_button, &self->tool_colors[self->active_tool]);
   gtk_color_dialog_button_set_rgba(self->fill_color_button, &self->tool_fill_colors[self->active_tool]);
-  if (self->active_tool == WAYTATOR_TOOL_BLUR)
+  if (self->active_tool == SWASH_TOOL_BLUR)
     gtk_drop_down_set_selected(self->blur_type_dropdown, self->blur_type);
   self->updating_ui = FALSE;
 }
 
 static void
-waytator_window_init(WaytatorWindow *self)
+swash_window_init(SwashWindow *self)
 {
-  waytator_window_init_state(self);
-  waytator_window_ensure_icons_registered();
+  swash_window_init_state(self);
+  swash_window_ensure_icons_registered();
 
   gtk_widget_init_template(GTK_WIDGET(self));
-  waytator_window_setup_window_background(self);
-  waytator_window_ensure_css_loaded();
+  swash_window_setup_window_background(self);
+  swash_window_ensure_css_loaded();
 
   gtk_drawing_area_set_draw_func(self->drawing_area,
-                                 waytator_window_drawing_area_draw,
+                                 swash_window_drawing_area_draw,
                                  self,
                                  NULL);
-  waytator_window_setup_ocr_panel(self);
-  waytator_window_setup_window_controls(self);
-  waytator_window_setup_popovers(self);
-  waytator_window_setup_controllers(self);
-  waytator_window_setup_signals(self);
-  g_signal_connect(self->copy_button, "clicked", G_CALLBACK(waytator_window_copy_clicked), self);
-  g_signal_connect(self->ocr_panel_toggle_button, "toggled", G_CALLBACK(waytator_window_ocr_panel_toggled), self);
-  g_signal_connect(self->ocr_panel_close_button, "clicked", G_CALLBACK(waytator_window_ocr_panel_close_clicked), self);
-  g_signal_connect(self->ocr_panel_bottom_sheet, "notify::open", G_CALLBACK(waytator_window_ocr_panel_open_changed), self);
+  swash_window_setup_ocr_panel(self);
+  swash_window_setup_window_controls(self);
+  swash_window_setup_popovers(self);
+  swash_window_setup_controllers(self);
+  swash_window_setup_signals(self);
+  g_signal_connect(self->copy_button, "clicked", G_CALLBACK(swash_window_copy_clicked), self);
+  g_signal_connect(self->ocr_panel_toggle_button, "toggled", G_CALLBACK(swash_window_ocr_panel_toggled), self);
+  g_signal_connect(self->ocr_panel_close_button, "clicked", G_CALLBACK(swash_window_ocr_panel_close_clicked), self);
+  g_signal_connect(self->ocr_panel_bottom_sheet, "notify::open", G_CALLBACK(swash_window_ocr_panel_open_changed), self);
 
-  waytator_window_activate_tool_button(self);
-  waytator_window_update_size_controls(self);
-  waytator_window_update_tool_ui(self);
-  waytator_window_sync_state(self);
+  swash_window_activate_tool_button(self);
+  swash_window_update_size_controls(self);
+  swash_window_update_tool_ui(self);
+  swash_window_sync_state(self);
 }
 
 void
-waytator_window_save_state(WaytatorWindow *self)
+swash_window_save_state(SwashWindow *self)
 {
-  waytator_window_save_preferences(self);
+  swash_window_save_preferences(self);
 }
 
-WaytatorWindow *
-waytator_window_new(AdwApplication *app)
+SwashWindow *
+swash_window_new(AdwApplication *app)
 {
-  return g_object_new(WAYTATOR_TYPE_WINDOW,
+  return g_object_new(SWASH_TYPE_WINDOW,
                       "application", app,
                       NULL);
 }

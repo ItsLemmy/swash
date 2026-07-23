@@ -2,9 +2,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "waytator-window.h"
+#include "window.h"
 
-#define WAYTATOR_APP_ID "dev.faetalize.waytator"
+#define SWASH_APP_ID "dev.lemmy.swash"
 
 static GBytes *
 app_read_stream_bytes(GInputStream *stream,
@@ -54,15 +54,15 @@ app_should_read_stdin(void)
       || S_ISREG(stdin_stat.st_mode);
 }
 
-static WaytatorWindow *
+static SwashWindow *
 app_get_or_create_window(AdwApplication *app)
 {
   GtkWindow *window = gtk_application_get_active_window(GTK_APPLICATION(app));
 
   if (window == NULL)
-    window = GTK_WINDOW(waytator_window_new(app));
+    window = GTK_WINDOW(swash_window_new(app));
 
-  return WAYTATOR_WINDOW(window);
+  return SWASH_WINDOW(window);
 }
 
 static void
@@ -86,8 +86,8 @@ shutdown_action(GApplication *app,
 
   (void) user_data;
 
-  if (window != NULL && WAYTATOR_IS_WINDOW(window))
-    waytator_window_save_state(WAYTATOR_WINDOW(window));
+  if (window != NULL && SWASH_IS_WINDOW(window))
+    swash_window_save_state(SWASH_WINDOW(window));
 }
 
 static const GActionEntry app_actions[] = {
@@ -110,7 +110,7 @@ app_open(GApplication  *app,
          const char    *hint,
          gpointer       user_data)
 {
-  WaytatorWindow *window;
+  SwashWindow *window;
   g_autoptr(GError) error = NULL;
 
   (void) hint;
@@ -118,7 +118,7 @@ app_open(GApplication  *app,
 
   window = app_get_or_create_window(ADW_APPLICATION(app));
 
-  if (n_files > 0 && files[0] != NULL && !waytator_window_open_file(window, files[0], &error)) {
+  if (n_files > 0 && files[0] != NULL && !swash_window_open_file(window, files[0], &error)) {
     g_printerr("Error loading image: %s\n", error->message);
     return;
   }
@@ -138,7 +138,7 @@ app_command_line(GApplication            *app,
   const char *stdin_name = "stdin.png";
   g_autoptr(GError) error = NULL;
   g_autoptr(GFile) file = NULL;
-  WaytatorWindow *window;
+  SwashWindow *window;
 
   (void) user_data;
 
@@ -187,7 +187,7 @@ app_command_line(GApplication            *app,
     g_autoptr(GBytes) bytes = NULL;
 
     bytes = app_read_stream_bytes(g_application_command_line_get_stdin(command_line), &error);
-    if (bytes == NULL || !waytator_window_open_bytes(window, bytes, stdin_name, &error)) {
+    if (bytes == NULL || !swash_window_open_bytes(window, bytes, stdin_name, &error)) {
       g_application_command_line_printerr(command_line,
                                           "Error loading image from stdin: %s\n",
                                           error->message);
@@ -195,7 +195,7 @@ app_command_line(GApplication            *app,
       goto done;
     }
   } else if (file != NULL) {
-    if (!waytator_window_open_file(window, file, &error)) {
+    if (!swash_window_open_file(window, file, &error)) {
       g_application_command_line_printerr(command_line,
                                           "Error loading image '%s': %s\n",
                                           arguments[1],
@@ -230,10 +230,10 @@ main(int   argc,
     run_argc = 2;
   }
 
-  app = adw_application_new(WAYTATOR_APP_ID,
+  app = adw_application_new(SWASH_APP_ID,
                              G_APPLICATION_HANDLES_COMMAND_LINE | G_APPLICATION_HANDLES_OPEN);
-  g_application_set_resource_base_path(G_APPLICATION(app), "/dev/faetalize/waytator");
-  gtk_window_set_default_icon_name(WAYTATOR_APP_ID);
+  g_application_set_resource_base_path(G_APPLICATION(app), "/dev/lemmy/swash");
+  gtk_window_set_default_icon_name(SWASH_APP_ID);
 
   g_action_map_add_action_entries(G_ACTION_MAP(app),
                                   app_actions,

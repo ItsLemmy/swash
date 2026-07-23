@@ -1,10 +1,10 @@
 #pragma once
 
-#include "waytator-document.h"
-#include "waytator-types.h"
-#include "waytator-window.h"
+#include "document.h"
+#include "types.h"
+#include "window.h"
 
-struct _WaytatorWindow {
+struct _SwashWindow {
   AdwApplicationWindow parent_instance;
 
   GtkStack *canvas_stack;
@@ -92,11 +92,11 @@ struct _WaytatorWindow {
   char *source_name;
   GdkTexture *texture;
   cairo_surface_t *image_surface;
-  WaytatorDocument *document;
-  WaytatorStroke *current_stroke;
+  SwashDocument *document;
+  SwashStroke *current_stroke;
   double zoom;
   gboolean fit_mode;
-  WaytatorTool active_tool;
+  SwashTool active_tool;
   gboolean drawing;
   guint copy_feedback_timeout_id;
   guint save_spinner_timeout_id;
@@ -123,10 +123,10 @@ struct _WaytatorWindow {
   double pointer_widget_x;
   double pointer_widget_y;
   gboolean pointer_in;
-  WaytatorWindowBackgroundMode window_background_mode;
+  SwashWindowBackgroundMode window_background_mode;
   gboolean updating_ui;
   gboolean interaction_has_undo_step;
-  WaytatorStroke *selected_stroke;
+  SwashStroke *selected_stroke;
   double move_start_x;
   double move_start_y;
   gboolean text_editing;
@@ -149,76 +149,76 @@ struct _WaytatorWindow {
   gboolean auto_copy_latest_change;
   double window_background_opacity;
   double floating_controls_opacity;
-  double tool_widths[WAYTATOR_TOOL_MOVE + 1];
-  GdkRGBA tool_colors[WAYTATOR_TOOL_MOVE + 1];
-  GdkRGBA tool_fill_colors[WAYTATOR_TOOL_MOVE + 1];
+  double tool_widths[SWASH_TOOL_MOVE + 1];
+  GdkRGBA tool_colors[SWASH_TOOL_MOVE + 1];
+  GdkRGBA tool_fill_colors[SWASH_TOOL_MOVE + 1];
   int blur_type;
-  WaytatorEraserStyle eraser_style;
+  SwashEraserStyle eraser_style;
   GPtrArray *ocr_lines;
-  WaytatorOcrLine *selected_ocr_line;
+  SwashOcrLine *selected_ocr_line;
   char *ocr_all_text;
 };
 
-GPtrArray *waytator_window_strokes(WaytatorWindow *self);
-void waytator_window_update_ocr_overlay(WaytatorWindow *self);
-void waytator_window_maybe_start_ocr(WaytatorWindow *self);
-void waytator_window_update_ocr_panel(WaytatorWindow *self);
-void waytator_window_reset_save_button(WaytatorWindow *self);
-void waytator_window_update_history_buttons(WaytatorWindow *self);
-void waytator_window_clear_history(WaytatorWindow *self);
-void waytator_window_record_undo_step(WaytatorWindow *self);
-void waytator_window_maybe_auto_copy_latest_change(WaytatorWindow *self);
-void waytator_window_trigger_copy(WaytatorWindow *self);
-void waytator_window_restore_strokes(WaytatorWindow *self,
+GPtrArray *swash_window_strokes(SwashWindow *self);
+void swash_window_update_ocr_overlay(SwashWindow *self);
+void swash_window_maybe_start_ocr(SwashWindow *self);
+void swash_window_update_ocr_panel(SwashWindow *self);
+void swash_window_reset_save_button(SwashWindow *self);
+void swash_window_update_history_buttons(SwashWindow *self);
+void swash_window_clear_history(SwashWindow *self);
+void swash_window_record_undo_step(SwashWindow *self);
+void swash_window_maybe_auto_copy_latest_change(SwashWindow *self);
+void swash_window_trigger_copy(SwashWindow *self);
+void swash_window_restore_strokes(SwashWindow *self,
                                      GPtrArray      *strokes);
 
-gboolean waytator_window_get_display_rect(WaytatorWindow *self,
+gboolean swash_window_get_display_rect(SwashWindow *self,
                                           double          widget_width,
                                           double          widget_height,
                                           double         *display_x,
                                           double         *display_y,
                                           double         *display_width,
                                           double         *display_height);
-gboolean waytator_window_get_image_point(WaytatorWindow *self,
+gboolean swash_window_get_image_point(SwashWindow *self,
                                          double          widget_x,
                                          double          widget_y,
                                          gboolean        clamp_to_image,
                                          double         *image_x,
                                          double         *image_y);
-void waytator_window_set_adjustment_clamped(GtkAdjustment *adjustment,
+void swash_window_set_adjustment_clamped(GtkAdjustment *adjustment,
                                             double         value);
-gboolean waytator_window_get_pointer_viewport_position(WaytatorWindow *self,
+gboolean swash_window_get_pointer_viewport_position(SwashWindow *self,
                                                        double         *x,
                                                        double         *y);
-void waytator_window_get_viewport_center(WaytatorWindow *self,
+void swash_window_get_viewport_center(SwashWindow *self,
                                          double         *x,
                                          double         *y);
-double waytator_window_get_effective_zoom(WaytatorWindow *self);
-void waytator_window_apply_zoom_mode(WaytatorWindow *self);
-void waytator_window_update_zoom_label(WaytatorWindow *self);
-void waytator_window_update_picture_size(WaytatorWindow *self);
-void waytator_window_refresh_document_state(WaytatorWindow *self);
-cairo_surface_t *waytator_window_render_composited_surface(WaytatorWindow *self);
-void waytator_window_apply_crop(WaytatorWindow *self,
+double swash_window_get_effective_zoom(SwashWindow *self);
+void swash_window_apply_zoom_mode(SwashWindow *self);
+void swash_window_update_zoom_label(SwashWindow *self);
+void swash_window_update_picture_size(SwashWindow *self);
+void swash_window_refresh_document_state(SwashWindow *self);
+cairo_surface_t *swash_window_render_composited_surface(SwashWindow *self);
+void swash_window_apply_crop(SwashWindow *self,
                                 int             left,
                                 int             top,
                                 int             width,
                                 int             height);
-void waytator_window_set_zoom_at(WaytatorWindow *self,
+void swash_window_set_zoom_at(SwashWindow *self,
                                  double          zoom,
                                  double          viewport_x,
                                  double          viewport_y);
-void waytator_window_update_size_controls(WaytatorWindow *self);
-void waytator_window_update_tool_ui(WaytatorWindow *self);
-void waytator_window_text_editing_commit(WaytatorWindow *self);
-void waytator_window_queue_fit_zoom(WaytatorWindow *self);
-void waytator_window_sync_state(WaytatorWindow *self);
-void waytator_window_install_history_actions(GtkWidgetClass *widget_class);
-void waytator_window_setup_tool_signals(WaytatorWindow *self);
-void waytator_window_install_canvas_actions(GtkWidgetClass *widget_class);
-void waytator_window_setup_controllers(WaytatorWindow *self);
-void waytator_window_setup_signals(WaytatorWindow *self);
-void waytator_window_drawing_area_draw(GtkDrawingArea *area,
+void swash_window_update_size_controls(SwashWindow *self);
+void swash_window_update_tool_ui(SwashWindow *self);
+void swash_window_text_editing_commit(SwashWindow *self);
+void swash_window_queue_fit_zoom(SwashWindow *self);
+void swash_window_sync_state(SwashWindow *self);
+void swash_window_install_history_actions(GtkWidgetClass *widget_class);
+void swash_window_setup_tool_signals(SwashWindow *self);
+void swash_window_install_canvas_actions(GtkWidgetClass *widget_class);
+void swash_window_setup_controllers(SwashWindow *self);
+void swash_window_setup_signals(SwashWindow *self);
+void swash_window_drawing_area_draw(GtkDrawingArea *area,
                                        cairo_t        *cr,
                                        int             width,
                                        int             height,

@@ -4,42 +4,42 @@
 #include <cairo.h>
 
 typedef enum {
-  WAYTATOR_TOOL_PAN,
-  WAYTATOR_TOOL_CROP,
-  WAYTATOR_TOOL_BRUSH,
-  WAYTATOR_TOOL_MARKER,
-  WAYTATOR_TOOL_ERASER,
-  WAYTATOR_TOOL_RECTANGLE,
-  WAYTATOR_TOOL_CIRCLE,
-  WAYTATOR_TOOL_LINE,
-  WAYTATOR_TOOL_ARROW,
-  WAYTATOR_TOOL_OCR,
-  WAYTATOR_TOOL_TEXT,
-  WAYTATOR_TOOL_BLUR,
-  WAYTATOR_TOOL_NUMBERING,
-  WAYTATOR_TOOL_MOVE,
-} WaytatorTool;
+  SWASH_TOOL_PAN,
+  SWASH_TOOL_CROP,
+  SWASH_TOOL_BRUSH,
+  SWASH_TOOL_MARKER,
+  SWASH_TOOL_ERASER,
+  SWASH_TOOL_RECTANGLE,
+  SWASH_TOOL_CIRCLE,
+  SWASH_TOOL_LINE,
+  SWASH_TOOL_ARROW,
+  SWASH_TOOL_OCR,
+  SWASH_TOOL_TEXT,
+  SWASH_TOOL_BLUR,
+  SWASH_TOOL_NUMBERING,
+  SWASH_TOOL_MOVE,
+} SwashTool;
 
 typedef enum {
-  WAYTATOR_ERASER_STYLE_DUAL_RING,
-  WAYTATOR_ERASER_STYLE_DASHED_RING,
-  WAYTATOR_ERASER_STYLE_PATTERN,
-} WaytatorEraserStyle;
+  SWASH_ERASER_STYLE_DUAL_RING,
+  SWASH_ERASER_STYLE_DASHED_RING,
+  SWASH_ERASER_STYLE_PATTERN,
+} SwashEraserStyle;
 
 //this is so annoying
 typedef enum {
-  WAYTATOR_WINDOW_BACKGROUND_FOLLOW_SYSTEM,
-  WAYTATOR_WINDOW_BACKGROUND_OPAQUE,
-  WAYTATOR_WINDOW_BACKGROUND_TRANSPARENT,
-} WaytatorWindowBackgroundMode;
+  SWASH_WINDOW_BACKGROUND_FOLLOW_SYSTEM,
+  SWASH_WINDOW_BACKGROUND_OPAQUE,
+  SWASH_WINDOW_BACKGROUND_TRANSPARENT,
+} SwashWindowBackgroundMode;
 
 typedef struct {
   double x;
   double y;
-} WaytatorPoint;
+} SwashPoint;
 
 typedef struct {
-  WaytatorTool tool;
+  SwashTool tool;
   double width;
   double r;
   double g;
@@ -56,7 +56,7 @@ typedef struct {
   guint blur_cache_generation;
   int blur_cache_x;
   int blur_cache_y;
-} WaytatorStroke;
+} SwashStroke;
 
 typedef struct {
   int left;
@@ -65,7 +65,7 @@ typedef struct {
   int height;
   char *text;
   GtkWidget *button;
-} WaytatorOcrLine;
+} SwashOcrLine;
 
 typedef struct {
   guint generation;
@@ -73,26 +73,26 @@ typedef struct {
   int height;
   gsize stride;
   guchar *pixels;
-} WaytatorOcrRequest;
+} SwashOcrRequest;
 
 typedef struct {
   guint generation;
   GPtrArray *lines;
-} WaytatorOcrResult;
+} SwashOcrResult;
 
 typedef enum {
-  WAYTATOR_EXPORT_COPY,
-  WAYTATOR_EXPORT_SAVE,
-} WaytatorExportKind;
+  SWASH_EXPORT_COPY,
+  SWASH_EXPORT_SAVE,
+} SwashExportKind;
 
-typedef WaytatorStroke *(*WaytatorStrokeCopyFunc)(WaytatorStroke *stroke);
-typedef void (*WaytatorStrokeRenderFunc)(cairo_t *cr,
-                                         WaytatorStroke *stroke,
+typedef SwashStroke *(*SwashStrokeCopyFunc)(SwashStroke *stroke);
+typedef void (*SwashStrokeRenderFunc)(cairo_t *cr,
+                                         SwashStroke *stroke,
                                          cairo_surface_t *source_surface,
                                          guint image_generation);
 
 typedef struct {
-  WaytatorExportKind kind;
+  SwashExportKind kind;
   int width;
   int height;
   gsize stride;
@@ -101,12 +101,12 @@ typedef struct {
   GFile *file;
   char *copy_format;
   gboolean allow_marker_overlap;
-  WaytatorStrokeRenderFunc render_stroke;
+  SwashStrokeRenderFunc render_stroke;
   guint image_generation;
-} WaytatorExportRequest;
+} SwashExportRequest;
 
 typedef struct {
   const char *mime_type;
   GBytes *bytes;
   GdkTexture *texture;
-} WaytatorCopyResult;
+} SwashCopyResult;

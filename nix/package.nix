@@ -12,7 +12,7 @@
 }:
 
 stdenv.mkDerivation (finalAttrs: {
-  pname = "waytator";
+  pname = "swash";
   version = "1.3.1";
 
   src = ../.;
@@ -36,9 +36,9 @@ stdenv.mkDerivation (finalAttrs: {
 
   meta = with lib; {
     description = "Screenshot annotator and lightweight image editor";
-    homepage = "https://github.com/ItsLemmy/waytator";
+    homepage = "https://github.com/ItsLemmy/swash";
     license = licenses.gpl3Plus;
     platforms = platforms.linux;
-    mainProgram = "waytator";
+    mainProgram = "swash";
   };
 })

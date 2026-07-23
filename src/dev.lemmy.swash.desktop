@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Waytator
+Name=Swash
 Comment=Screenshot annotator and lightweight image editor
-Exec=waytator %U
-Icon=dev.faetalize.waytator
+Exec=swash %U
+Icon=dev.lemmy.swash
 Terminal=false
 Categories=Graphics;
 StartupNotify=true

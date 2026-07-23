@@ -3,7 +3,7 @@
 /pkg/
 /src/build/
 /src/*.tar.gz
-/src/waytator-*/
+/src/swash-*/
 /*.tar.gz
 /*.pkg.tar.zst
 /test_scale

@@ -10,7 +10,7 @@
         <attribute name="action">win.preferences</attribute>
       </item>
       <item>
-        <attribute name="label">About Waytator</attribute>
+        <attribute name="label">About Swash</attribute>
         <attribute name="action">win.about</attribute>
       </item>
     </section>
@@ -42,10 +42,10 @@
     </section>
   </menu>
 
-  <template class="WaytatorWindow" parent="AdwApplicationWindow">
+  <template class="SwashWindow" parent="AdwApplicationWindow">
     <property name="default-width">1120</property>
     <property name="default-height">760</property>
-    <property name="title">Waytator</property>
+    <property name="title">Swash</property>
 
     <property name="content">
       <object class="AdwBottomSheet" id="ocr_panel_bottom_sheet">
@@ -269,7 +269,7 @@
                           <object class="GtkToggleButton" id="move_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Move</property>
-                            <property name="icon-name">waytator-move-symbolic</property>
+                            <property name="icon-name">swash-move-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -280,7 +280,7 @@
                           <object class="GtkToggleButton" id="brush_tool_button">
                             <property name="tooltip-text">Brush</property>
                             <property name="active">True</property>
-                            <property name="icon-name">waytator-pencil-symbolic</property>
+                            <property name="icon-name">swash-pencil-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -291,7 +291,7 @@
                           <object class="GtkToggleButton" id="arrow_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Arrow</property>
-                            <property name="icon-name">waytator-arrow-symbolic</property>
+                            <property name="icon-name">swash-arrow-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -302,7 +302,7 @@
                           <object class="GtkToggleButton" id="rectangle_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Rectangle</property>
-                            <property name="icon-name">waytator-rectangle-symbolic</property>
+                            <property name="icon-name">swash-rectangle-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -313,7 +313,7 @@
                           <object class="GtkToggleButton" id="circle_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Circle</property>
-                            <property name="icon-name">waytator-circle-symbolic</property>
+                            <property name="icon-name">swash-circle-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -324,7 +324,7 @@
                           <object class="GtkToggleButton" id="line_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Line</property>
-                            <property name="icon-name">waytator-line-symbolic</property>
+                            <property name="icon-name">swash-line-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -335,7 +335,7 @@
                           <object class="GtkToggleButton" id="highlighter_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Highlighter</property>
-                            <property name="icon-name">waytator-highlight-symbolic</property>
+                            <property name="icon-name">swash-highlight-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -346,7 +346,7 @@
                           <object class="GtkToggleButton" id="text_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Text</property>
-                            <property name="icon-name">waytator-text-symbolic</property>
+                            <property name="icon-name">swash-text-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -357,7 +357,7 @@
                           <object class="GtkToggleButton" id="numbering_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Numbering</property>
-                            <property name="icon-name">waytator-numbering-symbolic</property>
+                            <property name="icon-name">swash-numbering-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -368,7 +368,7 @@
                           <object class="GtkToggleButton" id="blur_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Blur</property>
-                            <property name="icon-name">waytator-blur-symbolic</property>
+                            <property name="icon-name">swash-blur-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -379,7 +379,7 @@
                           <object class="GtkToggleButton" id="eraser_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Eraser</property>
-                            <property name="icon-name">waytator-eraser-symbolic</property>
+                            <property name="icon-name">swash-eraser-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -398,7 +398,7 @@
                           <object class="GtkToggleButton" id="crop_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Crop</property>
-                            <property name="icon-name">waytator-crop-symbolic</property>
+                            <property name="icon-name">swash-crop-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -409,7 +409,7 @@
                           <object class="GtkToggleButton" id="pan_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Pan</property>
-                            <property name="icon-name">waytator-pan-symbolic</property>
+                            <property name="icon-name">swash-pan-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>
@@ -419,7 +419,7 @@
                         <child>
                           <object class="GtkButton" id="rotate_counter_clockwise_button">
                             <property name="tooltip-text">Rotate counter clockwise</property>
-                            <property name="icon-name">waytator-rotate-counter-clockwise-symbolic</property>
+                            <property name="icon-name">swash-rotate-counter-clockwise-symbolic</property>
                             <property name="action-name">win.rotate-counter-clockwise</property>
                             <style>
                               <class name="flat"/>
@@ -453,7 +453,7 @@
                           <object class="GtkToggleButton" id="ocr_tool_button">
                             <property name="group">brush_tool_button</property>
                             <property name="tooltip-text">Recognize text</property>
-                            <property name="icon-name">waytator-scanner-symbolic</property>
+                            <property name="icon-name">swash-scanner-symbolic</property>
                             <style>
                               <class name="flat"/>
                             </style>

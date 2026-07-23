@@ -1,10 +1,10 @@
-#include "waytator-stroke.h"
+#include "stroke.h"
 
 #include <math.h>
 #include <stdint.h>
 
 static void
-waytator_marker_add_rect(cairo_t *cr,
+swash_marker_add_rect(cairo_t *cr,
                          double   center_x,
                          double   center_y,
                          double   height)
@@ -19,60 +19,60 @@ waytator_marker_add_rect(cairo_t *cr,
 }
 
 double
-waytator_tool_width(WaytatorTool tool)
+swash_tool_width(SwashTool tool)
 {
   switch (tool) {
-  case WAYTATOR_TOOL_PAN:
-  case WAYTATOR_TOOL_CROP:
-  case WAYTATOR_TOOL_MOVE:
+  case SWASH_TOOL_PAN:
+  case SWASH_TOOL_CROP:
+  case SWASH_TOOL_MOVE:
     return 0.0;
-  case WAYTATOR_TOOL_MARKER:
+  case SWASH_TOOL_MARKER:
     return 24.0;
-  case WAYTATOR_TOOL_ERASER:
+  case SWASH_TOOL_ERASER:
     return 28.0;
-  case WAYTATOR_TOOL_RECTANGLE:
-  case WAYTATOR_TOOL_CIRCLE:
-  case WAYTATOR_TOOL_LINE:
-  case WAYTATOR_TOOL_ARROW:
+  case SWASH_TOOL_RECTANGLE:
+  case SWASH_TOOL_CIRCLE:
+  case SWASH_TOOL_LINE:
+  case SWASH_TOOL_ARROW:
     return 6.0;
-  case WAYTATOR_TOOL_BLUR:
+  case SWASH_TOOL_BLUR:
     return 32.0;
-  case WAYTATOR_TOOL_TEXT:
+  case SWASH_TOOL_TEXT:
     return 24.0;
-  case WAYTATOR_TOOL_NUMBERING:
+  case SWASH_TOOL_NUMBERING:
     return 32.0;
-  case WAYTATOR_TOOL_BRUSH:
+  case SWASH_TOOL_BRUSH:
   default:
     return 6.0;
   }
 }
 
 gboolean
-waytator_tool_is_shape(WaytatorTool tool)
+swash_tool_is_shape(SwashTool tool)
 {
-  return tool == WAYTATOR_TOOL_RECTANGLE
-      || tool == WAYTATOR_TOOL_CIRCLE
-      || tool == WAYTATOR_TOOL_LINE
-      || tool == WAYTATOR_TOOL_ARROW
-      || tool == WAYTATOR_TOOL_BLUR;
+  return tool == SWASH_TOOL_RECTANGLE
+      || tool == SWASH_TOOL_CIRCLE
+      || tool == SWASH_TOOL_LINE
+      || tool == SWASH_TOOL_ARROW
+      || tool == SWASH_TOOL_BLUR;
 }
 
 gboolean
-waytator_tool_is_non_drawing(WaytatorTool tool)
+swash_tool_is_non_drawing(SwashTool tool)
 {
-  return tool == WAYTATOR_TOOL_PAN
-      || tool == WAYTATOR_TOOL_CROP
-      || tool == WAYTATOR_TOOL_OCR;
+  return tool == SWASH_TOOL_PAN
+      || tool == SWASH_TOOL_CROP
+      || tool == SWASH_TOOL_OCR;
 }
 
-WaytatorStroke *
-waytator_stroke_new(WaytatorTool   tool,
+SwashStroke *
+swash_stroke_new(SwashTool   tool,
                     double         width,
                     const GdkRGBA *color,
                     const GdkRGBA *fill_color,
                     int            blur_type)
 {
-  WaytatorStroke *stroke = g_new0(WaytatorStroke, 1);
+  SwashStroke *stroke = g_new0(SwashStroke, 1);
 
   stroke->tool = tool;
   stroke->width = width;
@@ -87,14 +87,14 @@ waytator_stroke_new(WaytatorTool   tool,
     stroke->fill_a = fill_color->alpha;
   }
   stroke->blur_type = blur_type;
-  stroke->points = g_array_new(FALSE, FALSE, sizeof(WaytatorPoint));
+  stroke->points = g_array_new(FALSE, FALSE, sizeof(SwashPoint));
   return stroke;
 }
 
-WaytatorStroke *
-waytator_stroke_copy(WaytatorStroke *stroke)
+SwashStroke *
+swash_stroke_copy(SwashStroke *stroke)
 {
-  WaytatorStroke *copy = g_new0(WaytatorStroke, 1);
+  SwashStroke *copy = g_new0(SwashStroke, 1);
 
   copy->tool = stroke->tool;
   copy->width = stroke->width;
@@ -107,7 +107,7 @@ waytator_stroke_copy(WaytatorStroke *stroke)
   copy->fill_b = stroke->fill_b;
   copy->fill_a = stroke->fill_a;
   copy->blur_type = stroke->blur_type;
-  copy->points = g_array_sized_new(FALSE, FALSE, sizeof(WaytatorPoint), stroke->points->len);
+  copy->points = g_array_sized_new(FALSE, FALSE, sizeof(SwashPoint), stroke->points->len);
   g_array_append_vals(copy->points, stroke->points->data, stroke->points->len);
   if (stroke->text != NULL)
     copy->text = g_strdup(stroke->text);
@@ -115,7 +115,7 @@ waytator_stroke_copy(WaytatorStroke *stroke)
 }
 
 void
-waytator_stroke_free(WaytatorStroke *stroke)
+swash_stroke_free(SwashStroke *stroke)
 {
   if (stroke == NULL)
     return;
@@ -128,15 +128,15 @@ waytator_stroke_free(WaytatorStroke *stroke)
 }
 
 void
-waytator_stroke_add_point(WaytatorStroke *stroke,
+swash_stroke_add_point(SwashStroke *stroke,
                           double          x,
                           double          y)
 {
   const guint len = stroke->points->len;
-  WaytatorPoint point = { x, y };
+  SwashPoint point = { x, y };
 
   if (len > 0) {
-    const WaytatorPoint *last = &g_array_index(stroke->points, WaytatorPoint, len - 1);
+    const SwashPoint *last = &g_array_index(stroke->points, SwashPoint, len - 1);
 
     if (fabs(last->x - x) < 0.5 && fabs(last->y - y) < 0.5)
       return;
@@ -146,11 +146,11 @@ waytator_stroke_add_point(WaytatorStroke *stroke,
 }
 
 void
-waytator_stroke_set_last_point(WaytatorStroke *stroke,
+swash_stroke_set_last_point(SwashStroke *stroke,
                                double          x,
                                double          y)
 {
-  WaytatorPoint point = { x, y };
+  SwashPoint point = { x, y };
 
   if (stroke->points->len == 0) {
     g_array_append_val(stroke->points, point);
@@ -162,12 +162,12 @@ waytator_stroke_set_last_point(WaytatorStroke *stroke,
     return;
   }
 
-  g_array_index(stroke->points, WaytatorPoint, stroke->points->len - 1) = point;
+  g_array_index(stroke->points, SwashPoint, stroke->points->len - 1) = point;
 }
 
 void
-waytator_stroke_render(cairo_t         *cr,
-                       WaytatorStroke  *stroke,
+swash_stroke_render(cairo_t         *cr,
+                       SwashStroke  *stroke,
                        cairo_surface_t *source_surface,
                        guint            image_generation)
 {
@@ -183,13 +183,13 @@ waytator_stroke_render(cairo_t         *cr,
   cairo_set_line_width(cr, stroke->width);
 
   switch (stroke->tool) {
-  case WAYTATOR_TOOL_MARKER:
+  case SWASH_TOOL_MARKER:
     cairo_set_source_rgba(cr, stroke->r, stroke->g, stroke->b, 0.45);
     break;
-  case WAYTATOR_TOOL_BLUR:
+  case SWASH_TOOL_BLUR:
     cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.6);
     break;
-  case WAYTATOR_TOOL_TEXT:
+  case SWASH_TOOL_TEXT:
     cairo_set_source_rgba(cr, stroke->r, stroke->g, stroke->b, stroke->a);
     break;
   default:
@@ -197,9 +197,9 @@ waytator_stroke_render(cairo_t         *cr,
     break;
   }
 
-  if (stroke->tool == WAYTATOR_TOOL_TEXT) {
+  if (stroke->tool == SWASH_TOOL_TEXT) {
     if (stroke->text != NULL && len >= 1) {
-      const WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, 0);
+      const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, 0);
 
       cairo_save(cr);
       cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
@@ -211,9 +211,9 @@ waytator_stroke_render(cairo_t         *cr,
     return;
   }
 
-  if (stroke->tool == WAYTATOR_TOOL_NUMBERING) {
+  if (stroke->tool == SWASH_TOOL_NUMBERING) {
     if (len >= 1) {
-      const WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, 0);
+      const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, 0);
       const double circle_radius = stroke->width / 2.0;
       const double font_size = stroke->width * 0.6;
       const char *label = stroke->text != NULL ? stroke->text : "?";
@@ -242,17 +242,17 @@ waytator_stroke_render(cairo_t         *cr,
     return;
   }
 
-  if (stroke->tool == WAYTATOR_TOOL_MARKER) {
+  if (stroke->tool == SWASH_TOOL_MARKER) {
     const double marker_step = MIN(2.0, MAX(1.0, stroke->width / 4.0));
 
-    waytator_marker_add_rect(cr,
-                             g_array_index(stroke->points, WaytatorPoint, 0).x,
-                             g_array_index(stroke->points, WaytatorPoint, 0).y,
+    swash_marker_add_rect(cr,
+                             g_array_index(stroke->points, SwashPoint, 0).x,
+                             g_array_index(stroke->points, SwashPoint, 0).y,
                              stroke->width);
 
     for (i = 1; i < len; i++) {
-      const WaytatorPoint *previous = &g_array_index(stroke->points, WaytatorPoint, i - 1);
-      const WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, i);
+      const SwashPoint *previous = &g_array_index(stroke->points, SwashPoint, i - 1);
+      const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, i);
       const double dx = point->x - previous->x;
       const double dy = point->y - previous->y;
       const double distance = hypot(dx, dy);
@@ -261,7 +261,7 @@ waytator_stroke_render(cairo_t         *cr,
       for (int step = 1; step <= steps; step++) {
         const double t = (double) step / steps;
 
-        waytator_marker_add_rect(cr,
+        swash_marker_add_rect(cr,
                                  previous->x + dx * t,
                                  previous->y + dy * t,
                                  stroke->width);
@@ -273,16 +273,16 @@ waytator_stroke_render(cairo_t         *cr,
     return;
   }
 
-  if (waytator_tool_is_shape(stroke->tool) && len >= 2) {
-    const WaytatorPoint *start = &g_array_index(stroke->points, WaytatorPoint, 0);
-    const WaytatorPoint *end = &g_array_index(stroke->points, WaytatorPoint, len - 1);
+  if (swash_tool_is_shape(stroke->tool) && len >= 2) {
+    const SwashPoint *start = &g_array_index(stroke->points, SwashPoint, 0);
+    const SwashPoint *end = &g_array_index(stroke->points, SwashPoint, len - 1);
     const double left = MIN(start->x, end->x);
     const double top = MIN(start->y, end->y);
     const double rect_width = fabs(end->x - start->x);
     const double rect_height = fabs(end->y - start->y);
 
     switch (stroke->tool) {
-    case WAYTATOR_TOOL_RECTANGLE:
+    case SWASH_TOOL_RECTANGLE:
       cairo_rectangle(cr, left, top, rect_width, rect_height);
       if (stroke->fill_a > 0.0) {
         cairo_set_source_rgba(cr, stroke->fill_r, stroke->fill_g, stroke->fill_b, stroke->fill_a);
@@ -291,7 +291,7 @@ waytator_stroke_render(cairo_t         *cr,
       }
       cairo_stroke(cr);
       return;
-    case WAYTATOR_TOOL_CIRCLE: {
+    case SWASH_TOOL_CIRCLE: {
       const double radius_x = rect_width / 2.0;
       const double radius_y = rect_height / 2.0;
 
@@ -308,12 +308,12 @@ waytator_stroke_render(cairo_t         *cr,
       cairo_stroke(cr);
       return;
     }
-    case WAYTATOR_TOOL_LINE:
+    case SWASH_TOOL_LINE:
       cairo_move_to(cr, start->x, start->y);
       cairo_line_to(cr, end->x, end->y);
       cairo_stroke(cr);
       return;
-    case WAYTATOR_TOOL_ARROW: {
+    case SWASH_TOOL_ARROW: {
       const double angle = atan2(end->y - start->y, end->x - start->x);
       const double arrow_size = MAX(12.0, stroke->width * 3.0);
 
@@ -332,7 +332,7 @@ waytator_stroke_render(cairo_t         *cr,
       cairo_stroke(cr);
       return;
     }
-    case WAYTATOR_TOOL_BLUR: {
+    case SWASH_TOOL_BLUR: {
       int block_size;
       int b_left;
       int b_top;
@@ -470,7 +470,7 @@ waytator_stroke_render(cairo_t         *cr,
   }
 
   if (len == 1) {
-    const WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, 0);
+    const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, 0);
 
     cairo_arc(cr, point->x, point->y, stroke->width / 2.0, 0.0, 2.0 * G_PI);
     cairo_fill(cr);
@@ -478,11 +478,11 @@ waytator_stroke_render(cairo_t         *cr,
   }
 
   cairo_move_to(cr,
-                g_array_index(stroke->points, WaytatorPoint, 0).x,
-                g_array_index(stroke->points, WaytatorPoint, 0).y);
+                g_array_index(stroke->points, SwashPoint, 0).x,
+                g_array_index(stroke->points, SwashPoint, 0).y);
 
   for (i = 1; i < len; i++) {
-    const WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, i);
+    const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, i);
 
     cairo_line_to(cr, point->x, point->y);
   }
@@ -491,7 +491,7 @@ waytator_stroke_render(cairo_t         *cr,
 }
 
 static double
-waytator_distance_to_segment(double px,
+swash_distance_to_segment(double px,
                              double py,
                              double x0,
                              double y0,
@@ -513,7 +513,7 @@ waytator_distance_to_segment(double px,
 }
 
 static gboolean
-waytator_segment_intersects_rect(double x0,
+swash_segment_intersects_rect(double x0,
                                  double y0,
                                  double x1,
                                  double y1,
@@ -575,7 +575,7 @@ waytator_segment_intersects_rect(double x0,
 }
 
 static gboolean
-waytator_text_intersects_segment(WaytatorStroke *stroke,
+swash_text_intersects_segment(SwashStroke *stroke,
                                  double          x0,
                                  double          y0,
                                  double          x1,
@@ -585,7 +585,7 @@ waytator_text_intersects_segment(WaytatorStroke *stroke,
   cairo_surface_t *surface;
   cairo_t *cr;
   cairo_text_extents_t extents;
-  const WaytatorPoint *point;
+  const SwashPoint *point;
   double left;
   double top;
   double right;
@@ -594,7 +594,7 @@ waytator_text_intersects_segment(WaytatorStroke *stroke,
   if (stroke->points->len == 0 || stroke->text == NULL || stroke->text[0] == '\0')
     return FALSE;
 
-  point = &g_array_index(stroke->points, WaytatorPoint, 0);
+  point = &g_array_index(stroke->points, SwashPoint, 0);
   surface = cairo_image_surface_create(CAIRO_FORMAT_A8, 1, 1);
   cr = cairo_create(surface);
 
@@ -610,11 +610,11 @@ waytator_text_intersects_segment(WaytatorStroke *stroke,
   right = left + extents.width + radius * 2.0;
   bottom = top + extents.height + radius * 2.0;
 
-  return waytator_segment_intersects_rect(x0, y0, x1, y1, left, top, right, bottom);
+  return swash_segment_intersects_rect(x0, y0, x1, y1, left, top, right, bottom);
 }
 
 gboolean
-waytator_stroke_intersects_segment(WaytatorStroke *stroke,
+swash_stroke_intersects_segment(SwashStroke *stroke,
                                    double          x0,
                                    double          y0,
                                    double          x1,
@@ -623,48 +623,48 @@ waytator_stroke_intersects_segment(WaytatorStroke *stroke,
 {
   guint i;
 
-  if (stroke->tool == WAYTATOR_TOOL_TEXT)
-    return waytator_text_intersects_segment(stroke, x0, y0, x1, y1, radius);
+  if (stroke->tool == SWASH_TOOL_TEXT)
+    return swash_text_intersects_segment(stroke, x0, y0, x1, y1, radius);
 
-  if (stroke->tool == WAYTATOR_TOOL_NUMBERING && stroke->points->len >= 1) {
-    const WaytatorPoint *center = &g_array_index(stroke->points, WaytatorPoint, 0);
+  if (stroke->tool == SWASH_TOOL_NUMBERING && stroke->points->len >= 1) {
+    const SwashPoint *center = &g_array_index(stroke->points, SwashPoint, 0);
     const double circle_radius = stroke->width / 2.0;
 
-    return waytator_distance_to_segment(center->x, center->y, x0, y0, x1, y1) <= radius + circle_radius;
+    return swash_distance_to_segment(center->x, center->y, x0, y0, x1, y1) <= radius + circle_radius;
   }
 
-  if (waytator_tool_is_shape(stroke->tool) && stroke->points->len >= 2) {
-    const WaytatorPoint *start = &g_array_index(stroke->points, WaytatorPoint, 0);
-    const WaytatorPoint *end = &g_array_index(stroke->points, WaytatorPoint, stroke->points->len - 1);
+  if (swash_tool_is_shape(stroke->tool) && stroke->points->len >= 2) {
+    const SwashPoint *start = &g_array_index(stroke->points, SwashPoint, 0);
+    const SwashPoint *end = &g_array_index(stroke->points, SwashPoint, stroke->points->len - 1);
     const double left = MIN(start->x, end->x);
     const double right = MAX(start->x, end->x);
     const double top = MIN(start->y, end->y);
     const double bottom = MAX(start->y, end->y);
 
     switch (stroke->tool) {
-    case WAYTATOR_TOOL_LINE:
-    case WAYTATOR_TOOL_ARROW:
-      return waytator_distance_to_segment(start->x, start->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(end->x, end->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x0, y0, start->x, start->y, end->x, end->y) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x1, y1, start->x, start->y, end->x, end->y) <= radius + stroke->width / 2.0;
-    case WAYTATOR_TOOL_BLUR:
-      return waytator_segment_intersects_rect(x0, y0, x1, y1, left, top, right, bottom);
-    case WAYTATOR_TOOL_RECTANGLE:
-      return waytator_distance_to_segment(x0, y0, left, top, right, top) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x0, y0, right, top, right, bottom) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x0, y0, right, bottom, left, bottom) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x0, y0, left, bottom, left, top) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x1, y1, left, top, right, top) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x1, y1, right, top, right, bottom) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x1, y1, right, bottom, left, bottom) <= radius + stroke->width / 2.0
-          || waytator_distance_to_segment(x1, y1, left, bottom, left, top) <= radius + stroke->width / 2.0;
-    case WAYTATOR_TOOL_CIRCLE: {
+    case SWASH_TOOL_LINE:
+    case SWASH_TOOL_ARROW:
+      return swash_distance_to_segment(start->x, start->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(end->x, end->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x0, y0, start->x, start->y, end->x, end->y) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x1, y1, start->x, start->y, end->x, end->y) <= radius + stroke->width / 2.0;
+    case SWASH_TOOL_BLUR:
+      return swash_segment_intersects_rect(x0, y0, x1, y1, left, top, right, bottom);
+    case SWASH_TOOL_RECTANGLE:
+      return swash_distance_to_segment(x0, y0, left, top, right, top) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x0, y0, right, top, right, bottom) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x0, y0, right, bottom, left, bottom) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x0, y0, left, bottom, left, top) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x1, y1, left, top, right, top) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x1, y1, right, top, right, bottom) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x1, y1, right, bottom, left, bottom) <= radius + stroke->width / 2.0
+          || swash_distance_to_segment(x1, y1, left, bottom, left, top) <= radius + stroke->width / 2.0;
+    case SWASH_TOOL_CIRCLE: {
       const double center_x = (start->x + end->x) / 2.0;
       const double center_y = (start->y + end->y) / 2.0;
       const double radius_x = MAX(fabs(end->x - start->x) / 2.0, 0.0001);
       const double radius_y = MAX(fabs(end->y - start->y) / 2.0, 0.0001);
-      const WaytatorPoint candidates[] = { { x0, y0 }, { x1, y1 } };
+      const SwashPoint candidates[] = { { x0, y0 }, { x1, y1 } };
 
       for (guint j = 0; j < G_N_ELEMENTS(candidates); j++) {
         const double dx = (candidates[j].x - center_x) / radius_x;
@@ -686,9 +686,9 @@ waytator_stroke_intersects_segment(WaytatorStroke *stroke,
     return FALSE;
 
   for (i = 0; i < stroke->points->len; i++) {
-    const WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, i);
+    const SwashPoint *point = &g_array_index(stroke->points, SwashPoint, i);
 
-    if (waytator_distance_to_segment(point->x, point->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0)
+    if (swash_distance_to_segment(point->x, point->y, x0, y0, x1, y1) <= radius + stroke->width / 2.0)
       return TRUE;
   }
 
@@ -696,21 +696,21 @@ waytator_stroke_intersects_segment(WaytatorStroke *stroke,
 }
 
 gboolean
-waytator_stroke_hit_test(WaytatorStroke *stroke,
+swash_stroke_hit_test(SwashStroke *stroke,
                          double          x,
                          double          y,
                          double          tolerance)
 {
-  return waytator_stroke_intersects_segment(stroke, x, y, x, y, tolerance);
+  return swash_stroke_intersects_segment(stroke, x, y, x, y, tolerance);
 }
 
 void
-waytator_stroke_offset(WaytatorStroke *stroke,
+swash_stroke_offset(SwashStroke *stroke,
                        double          dx,
                        double          dy)
 {
   for (guint i = 0; i < stroke->points->len; i++) {
-    WaytatorPoint *point = &g_array_index(stroke->points, WaytatorPoint, i);
+    SwashPoint *point = &g_array_index(stroke->points, SwashPoint, i);
 
     point->x += dx;
     point->y += dy;
@@ -723,7 +723,7 @@ waytator_stroke_offset(WaytatorStroke *stroke,
 }
 
 void
-waytator_stroke_get_bounds(WaytatorStroke *stroke,
+swash_stroke_get_bounds(SwashStroke *stroke,
                            double         *out_x,
                            double         *out_y,
                            double         *out_w,
@@ -740,8 +740,8 @@ waytator_stroke_get_bounds(WaytatorStroke *stroke,
     return;
   }
 
-  if (stroke->tool == WAYTATOR_TOOL_NUMBERING && stroke->points->len >= 1) {
-    const WaytatorPoint *p = &g_array_index(stroke->points, WaytatorPoint, 0);
+  if (stroke->tool == SWASH_TOOL_NUMBERING && stroke->points->len >= 1) {
+    const SwashPoint *p = &g_array_index(stroke->points, SwashPoint, 0);
 
     *out_x = p->x - half_w;
     *out_y = p->y - half_w;
@@ -750,8 +750,8 @@ waytator_stroke_get_bounds(WaytatorStroke *stroke,
     return;
   }
 
-  if (stroke->tool == WAYTATOR_TOOL_TEXT && stroke->text != NULL && *stroke->text != '\0') {
-    const WaytatorPoint *p = &g_array_index(stroke->points, WaytatorPoint, 0);
+  if (stroke->tool == SWASH_TOOL_TEXT && stroke->text != NULL && *stroke->text != '\0') {
+    const SwashPoint *p = &g_array_index(stroke->points, SwashPoint, 0);
     cairo_surface_t *tmp = cairo_image_surface_create(CAIRO_FORMAT_A1, 1, 1);
     cairo_t *cr = cairo_create(tmp);
     cairo_text_extents_t extents;
@@ -772,7 +772,7 @@ waytator_stroke_get_bounds(WaytatorStroke *stroke,
   }
 
   for (guint i = 0; i < stroke->points->len; i++) {
-    const WaytatorPoint *p = &g_array_index(stroke->points, WaytatorPoint, i);
+    const SwashPoint *p = &g_array_index(stroke->points, SwashPoint, i);
 
     if (p->x < min_x) min_x = p->x;
     if (p->y < min_y) min_y = p->y;
@@ -787,7 +787,7 @@ waytator_stroke_get_bounds(WaytatorStroke *stroke,
 }
 
 void
-waytator_strokes_renumber(GPtrArray *strokes)
+swash_strokes_renumber(GPtrArray *strokes)
 {
   int count = 0;
 
@@ -795,9 +795,9 @@ waytator_strokes_renumber(GPtrArray *strokes)
     return;
 
   for (guint i = 0; i < strokes->len; i++) {
-    WaytatorStroke *stroke = g_ptr_array_index(strokes, i);
+    SwashStroke *stroke = g_ptr_array_index(strokes, i);
 
-    if (stroke->tool == WAYTATOR_TOOL_NUMBERING) {
+    if (stroke->tool == SWASH_TOOL_NUMBERING) {
       count++;
       g_free(stroke->text);
       stroke->text = g_strdup_printf("%d", count);

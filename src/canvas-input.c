@@ -1,24 +1,24 @@
-#include "waytator-window-private.h"
+#include "window-private.h"
 
-#include "waytator-stroke.h"
+#include "stroke.h"
 
 #include <math.h>
 
-#define WAYTATOR_MIN_ZOOM 0.10
-#define WAYTATOR_MAX_ZOOM 8.00
-#define WAYTATOR_TOUCH_TAP_MAX_DISTANCE 24.0
-#define WAYTATOR_TOUCH_TAP_MAX_DURATION_US (700 * G_TIME_SPAN_MILLISECOND)
+#define SWASH_MIN_ZOOM 0.10
+#define SWASH_MAX_ZOOM 8.00
+#define SWASH_TOUCH_TAP_MAX_DISTANCE 24.0
+#define SWASH_TOUCH_TAP_MAX_DURATION_US (700 * G_TIME_SPAN_MILLISECOND)
 
 typedef struct {
   double x;
   double y;
-} WaytatorTouchTapPoint;
+} SwashTouchTapPoint;
 
-static void waytator_window_text_editing_cancel(WaytatorWindow *self);
-void waytator_window_text_editing_commit(WaytatorWindow *self);
+static void swash_window_text_editing_cancel(SwashWindow *self);
+void swash_window_text_editing_commit(SwashWindow *self);
 
 static void
-waytator_window_get_viewport_size(WaytatorWindow *self,
+swash_window_get_viewport_size(SwashWindow *self,
                                   double         *width,
                                   double         *height)
 {
@@ -36,7 +36,7 @@ waytator_window_get_viewport_size(WaytatorWindow *self,
 }
 
 static gboolean
-waytator_window_parse_shortcut_match(const char      *accelerator,
+swash_window_parse_shortcut_match(const char      *accelerator,
                                      guint            keyval,
                                      GdkModifierType  state)
 {
@@ -56,12 +56,12 @@ waytator_window_parse_shortcut_match(const char      *accelerator,
 }
 
 static gboolean
-waytator_window_cancel_current_interaction(WaytatorWindow *self)
+swash_window_cancel_current_interaction(SwashWindow *self)
 {
   GPtrArray *strokes;
 
   if (self->text_editing) {
-    waytator_window_text_editing_cancel(self);
+    swash_window_text_editing_cancel(self);
     return TRUE;
   }
 
@@ -70,10 +70,10 @@ waytator_window_cancel_current_interaction(WaytatorWindow *self)
 
   self->drawing = FALSE;
 
-  if (self->active_tool == WAYTATOR_TOOL_PAN)
+  if (self->active_tool == SWASH_TOOL_PAN)
     return TRUE;
 
-  if (self->active_tool == WAYTATOR_TOOL_CROP) {
+  if (self->active_tool == SWASH_TOOL_CROP) {
     self->crop_start_x = 0.0;
     self->crop_start_y = 0.0;
     self->crop_end_x = 0.0;
@@ -87,7 +87,7 @@ waytator_window_cancel_current_interaction(WaytatorWindow *self)
     self->active_touch_draw_sequence = NULL;
   }
 
-  strokes = waytator_window_strokes(self);
+  strokes = swash_window_strokes(self);
   if (self->current_stroke != NULL && strokes != NULL)
     g_ptr_array_remove(strokes, self->current_stroke);
 
@@ -97,14 +97,14 @@ waytator_window_cancel_current_interaction(WaytatorWindow *self)
     return TRUE;
   }
 
-  waytator_document_discard_undo_step(self->document);
-  waytator_window_refresh_document_state(self);
-  waytator_window_update_history_buttons(self);
+  swash_document_discard_undo_step(self->document);
+  swash_window_refresh_document_state(self);
+  swash_window_update_history_buttons(self);
   return TRUE;
 }
 
 static void
-waytator_window_cancel_touch_tool_gestures(WaytatorWindow *self)
+swash_window_cancel_touch_tool_gestures(SwashWindow *self)
 {
   if (self->touch_pan_gesture != NULL)
     gtk_gesture_set_state(self->touch_pan_gesture, GTK_EVENT_SEQUENCE_DENIED);
@@ -117,7 +117,7 @@ waytator_window_cancel_touch_tool_gestures(WaytatorWindow *self)
 }
 
 static void
-waytator_window_reset_touch_tap(WaytatorWindow *self)
+swash_window_reset_touch_tap(SwashWindow *self)
 {
   self->touch_tap_candidate = FALSE;
   self->touch_tap_cancelled = FALSE;
@@ -127,7 +127,7 @@ waytator_window_reset_touch_tap(WaytatorWindow *self)
 }
 
 static void
-waytator_window_cancel_touch_tap(WaytatorWindow *self,
+swash_window_cancel_touch_tap(SwashWindow *self,
                                  const char     *reason)
 {
   (void) reason;
@@ -139,11 +139,11 @@ waytator_window_cancel_touch_tap(WaytatorWindow *self,
 }
 
 static void
-waytator_window_update_touch_tap_motion(WaytatorWindow  *self,
+swash_window_update_touch_tap_motion(SwashWindow  *self,
                                         GdkEventSequence *sequence,
                                         GdkEvent         *event)
 {
-  WaytatorTouchTapPoint *point;
+  SwashTouchTapPoint *point;
   double x;
   double y;
 
@@ -154,19 +154,19 @@ waytator_window_update_touch_tap_motion(WaytatorWindow  *self,
   if (point == NULL || !gdk_event_get_position(event, &x, &y))
     return;
 
-  if (hypot(x - point->x, y - point->y) > WAYTATOR_TOUCH_TAP_MAX_DISTANCE)
-    waytator_window_cancel_touch_tap(self, "after movement threshold");
+  if (hypot(x - point->x, y - point->y) > SWASH_TOUCH_TAP_MAX_DISTANCE)
+    swash_window_cancel_touch_tap(self, "after movement threshold");
 }
 
 static void
-waytator_window_finish_touch_tap(WaytatorWindow *self)
+swash_window_finish_touch_tap(SwashWindow *self)
 {
   const gint64 duration = g_get_monotonic_time() - self->touch_tap_started_at;
 
   if (!self->touch_tap_candidate)
     return;
 
-  if (!self->touch_tap_cancelled && duration <= WAYTATOR_TOUCH_TAP_MAX_DURATION_US) {
+  if (!self->touch_tap_cancelled && duration <= SWASH_TOUCH_TAP_MAX_DURATION_US) {
     if (self->touch_tap_max_points == 2) {
       gtk_widget_activate_action(GTK_WIDGET(self), "win.undo", NULL);
     } else if (self->touch_tap_max_points == 3) {
@@ -174,15 +174,15 @@ waytator_window_finish_touch_tap(WaytatorWindow *self)
     }
   }
 
-  waytator_window_reset_touch_tap(self);
+  swash_window_reset_touch_tap(self);
 }
 
 static gboolean
-waytator_window_touch_event(GtkEventControllerLegacy *controller,
+swash_window_touch_event(GtkEventControllerLegacy *controller,
                             GdkEvent                 *event,
                             gpointer                  user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   GdkEventSequence *sequence;
   double x;
   double y;
@@ -197,7 +197,7 @@ waytator_window_touch_event(GtkEventControllerLegacy *controller,
   switch (gdk_event_get_event_type(event)) {
   case GDK_TOUCH_BEGIN:
     if (g_hash_table_size(self->active_touch_sequences) == 0) {
-      waytator_window_reset_touch_tap(self);
+      swash_window_reset_touch_tap(self);
       self->touch_tap_candidate = TRUE;
       self->touch_tap_started_at = g_get_monotonic_time();
     }
@@ -208,7 +208,7 @@ waytator_window_touch_event(GtkEventControllerLegacy *controller,
     self->touch_tap_max_points = MAX(self->touch_tap_max_points,
                                      g_hash_table_size(self->active_touch_sequences));
     if (sequence != NULL && gdk_event_get_position(event, &x, &y)) {
-      WaytatorTouchTapPoint *point = g_new0(WaytatorTouchTapPoint, 1);
+      SwashTouchTapPoint *point = g_new0(SwashTouchTapPoint, 1);
 
       point->x = x;
       point->y = y;
@@ -216,18 +216,18 @@ waytator_window_touch_event(GtkEventControllerLegacy *controller,
     }
 
     if (g_hash_table_size(self->active_touch_sequences) > 3)
-      waytator_window_cancel_touch_tap(self, "after more than 3 fingers");
+      swash_window_cancel_touch_tap(self, "after more than 3 fingers");
 
     if (g_hash_table_size(self->active_touch_sequences) >= 2) {
-      waytator_window_cancel_current_interaction(self);
-      waytator_window_cancel_touch_tool_gestures(self);
+      swash_window_cancel_current_interaction(self);
+      swash_window_cancel_touch_tool_gestures(self);
     }
     break;
   case GDK_TOUCH_UPDATE:
-    waytator_window_update_touch_tap_motion(self, sequence, event);
+    swash_window_update_touch_tap_motion(self, sequence, event);
     break;
   case GDK_TOUCH_END:
-    waytator_window_update_touch_tap_motion(self, sequence, event);
+    swash_window_update_touch_tap_motion(self, sequence, event);
 
     if (sequence != NULL) {
       g_hash_table_remove(self->active_touch_sequences, sequence);
@@ -235,10 +235,10 @@ waytator_window_touch_event(GtkEventControllerLegacy *controller,
     }
 
     if (g_hash_table_size(self->active_touch_sequences) == 0)
-      waytator_window_finish_touch_tap(self);
+      swash_window_finish_touch_tap(self);
     break;
   case GDK_TOUCH_CANCEL:
-    waytator_window_cancel_touch_tap(self, "after touch cancel");
+    swash_window_cancel_touch_tap(self, "after touch cancel");
 
     if (sequence != NULL)
       g_hash_table_remove(self->active_touch_sequences, sequence);
@@ -247,7 +247,7 @@ waytator_window_touch_event(GtkEventControllerLegacy *controller,
       g_hash_table_remove(self->touch_tap_points, sequence);
 
     if (g_hash_table_size(self->active_touch_sequences) == 0)
-      waytator_window_reset_touch_tap(self);
+      swash_window_reset_touch_tap(self);
     break;
   default:
     break;
@@ -257,53 +257,53 @@ waytator_window_touch_event(GtkEventControllerLegacy *controller,
 }
 
 static void
-waytator_window_record_interaction_undo_step(WaytatorWindow *self)
+swash_window_record_interaction_undo_step(SwashWindow *self)
 {
   if (self->interaction_has_undo_step)
     return;
 
-  waytator_window_record_undo_step(self);
+  swash_window_record_undo_step(self);
   self->interaction_has_undo_step = TRUE;
 }
 
 static void
-waytator_window_begin_draw_stroke(WaytatorWindow *self)
+swash_window_begin_draw_stroke(SwashWindow *self)
 {
-  if (self->active_tool == WAYTATOR_TOOL_ERASER || self->current_stroke != NULL)
+  if (self->active_tool == SWASH_TOOL_ERASER || self->current_stroke != NULL)
     return;
 
-  waytator_window_record_interaction_undo_step(self);
-  self->current_stroke = waytator_stroke_new(self->active_tool,
+  swash_window_record_interaction_undo_step(self);
+  self->current_stroke = swash_stroke_new(self->active_tool,
                                              self->tool_widths[self->active_tool],
                                              &self->tool_colors[self->active_tool],
                                              &self->tool_fill_colors[self->active_tool],
                                              self->blur_type);
-  waytator_stroke_add_point(self->current_stroke, self->last_draw_x, self->last_draw_y);
+  swash_stroke_add_point(self->current_stroke, self->last_draw_x, self->last_draw_y);
 
-  if (waytator_tool_is_shape(self->active_tool))
-    waytator_stroke_add_point(self->current_stroke, self->last_draw_x, self->last_draw_y);
+  if (swash_tool_is_shape(self->active_tool))
+    swash_stroke_add_point(self->current_stroke, self->last_draw_x, self->last_draw_y);
 
-  if (self->active_tool == WAYTATOR_TOOL_NUMBERING) {
-    GPtrArray *strokes = waytator_window_strokes(self);
+  if (self->active_tool == SWASH_TOOL_NUMBERING) {
+    GPtrArray *strokes = swash_window_strokes(self);
     int count = 0;
 
     for (guint i = 0; i < strokes->len; i++) {
-      WaytatorStroke *s = g_ptr_array_index(strokes, i);
+      SwashStroke *s = g_ptr_array_index(strokes, i);
 
-      if (s->tool == WAYTATOR_TOOL_NUMBERING)
+      if (s->tool == SWASH_TOOL_NUMBERING)
         count++;
     }
 
     self->current_stroke->text = g_strdup_printf("%d", count + 1);
   }
 
-  g_ptr_array_add(waytator_window_strokes(self), self->current_stroke);
-  waytator_window_reset_save_button(self);
+  g_ptr_array_add(swash_window_strokes(self), self->current_stroke);
+  swash_window_reset_save_button(self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 static gboolean
-waytator_window_get_zoom_gesture_center(WaytatorWindow *self,
+swash_window_get_zoom_gesture_center(SwashWindow *self,
                                         GtkGesture      *gesture,
                                         double          *surface_x,
                                         double          *surface_y,
@@ -334,7 +334,7 @@ waytator_window_get_zoom_gesture_center(WaytatorWindow *self,
 }
 
 static void
-waytator_window_apply_pinch_gesture(WaytatorWindow   *self,
+swash_window_apply_pinch_gesture(SwashWindow   *self,
                                     GtkGestureZoom   *gesture,
                                     double            scale)
 {
@@ -346,7 +346,7 @@ waytator_window_apply_pinch_gesture(WaytatorWindow   *self,
   double viewport_height;
   const int image_width = gdk_paintable_get_intrinsic_width(GDK_PAINTABLE(self->texture));
   const int image_height = gdk_paintable_get_intrinsic_height(GDK_PAINTABLE(self->texture));
-  const double zoom = CLAMP(self->pinch_start_zoom * scale, WAYTATOR_MIN_ZOOM, WAYTATOR_MAX_ZOOM);
+  const double zoom = CLAMP(self->pinch_start_zoom * scale, SWASH_MIN_ZOOM, SWASH_MAX_ZOOM);
   const double display_width = image_width * zoom;
   const double display_height = image_height * zoom;
   double widget_width;
@@ -357,20 +357,20 @@ waytator_window_apply_pinch_gesture(WaytatorWindow   *self,
   if (self->texture == NULL)
     return;
 
-  if (!waytator_window_get_zoom_gesture_center(self,
+  if (!swash_window_get_zoom_gesture_center(self,
                                               GTK_GESTURE(gesture),
                                               NULL,
                                               NULL,
                                               &viewport_x,
                                               &viewport_y))
-    waytator_window_get_viewport_center(self, &viewport_x, &viewport_y);
+    swash_window_get_viewport_center(self, &viewport_x, &viewport_y);
 
   self->fit_mode = FALSE;
   self->zoom = zoom;
-  waytator_window_apply_zoom_mode(self);
-  waytator_window_update_zoom_label(self);
+  swash_window_apply_zoom_mode(self);
+  swash_window_update_zoom_label(self);
 
-  waytator_window_get_viewport_size(self, &viewport_width, &viewport_height);
+  swash_window_get_viewport_size(self, &viewport_width, &viewport_height);
   widget_width = MAX(viewport_width, display_width);
   widget_height = MAX(viewport_height, display_height);
   display_x = MAX(0.0, (widget_width - display_width) / 2.0);
@@ -378,20 +378,20 @@ waytator_window_apply_pinch_gesture(WaytatorWindow   *self,
 
   hadjustment = gtk_scrolled_window_get_hadjustment(self->canvas_scroller);
   vadjustment = gtk_scrolled_window_get_vadjustment(self->canvas_scroller);
-  waytator_window_set_adjustment_clamped(hadjustment,
+  swash_window_set_adjustment_clamped(hadjustment,
                                          display_x + self->pinch_anchor_rel_x * display_width - viewport_x);
-  waytator_window_set_adjustment_clamped(vadjustment,
+  swash_window_set_adjustment_clamped(vadjustment,
                                          display_y + self->pinch_anchor_rel_y * display_height - viewport_y);
 }
 
 static gboolean
-waytator_window_global_key_pressed(GtkEventControllerKey *controller,
+swash_window_global_key_pressed(GtkEventControllerKey *controller,
                                    guint                  keyval,
                                    guint                  keycode,
                                    GdkModifierType        state,
                                    gpointer               user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   GtkWidget *focus;
 
   (void) controller;
@@ -403,7 +403,7 @@ waytator_window_global_key_pressed(GtkEventControllerKey *controller,
 
   if (keyval == GDK_KEY_Escape
       && (state & gtk_accelerator_get_default_mod_mask()) == 0) {
-    if (waytator_window_cancel_current_interaction(self))
+    if (swash_window_cancel_current_interaction(self))
       return TRUE;
 
     if (adw_bottom_sheet_get_open(self->ocr_panel_bottom_sheet)) {
@@ -418,7 +418,7 @@ waytator_window_global_key_pressed(GtkEventControllerKey *controller,
   }
 
   if (self->copy_shortcut_enabled
-      && waytator_window_parse_shortcut_match(self->copy_shortcut_accel, keyval, state)) {
+      && swash_window_parse_shortcut_match(self->copy_shortcut_accel, keyval, state)) {
     gtk_widget_activate_action(GTK_WIDGET(self), "win.copy-buffer", NULL);
     return TRUE;
   }
@@ -492,23 +492,23 @@ waytator_window_global_key_pressed(GtkEventControllerKey *controller,
   return FALSE;
 }
 
-#define WAYTATOR_ZOOM_STEP 1.15
+#define SWASH_ZOOM_STEP 1.15
 
 static gboolean
-waytator_tool_uses_angle_snapping(WaytatorTool tool)
+swash_tool_uses_angle_snapping(SwashTool tool)
 {
-  return tool == WAYTATOR_TOOL_LINE || tool == WAYTATOR_TOOL_ARROW;
+  return tool == SWASH_TOOL_LINE || tool == SWASH_TOOL_ARROW;
 }
 
 static gboolean
-waytator_tool_uses_aspect_ratio_snapping(WaytatorTool tool)
+swash_tool_uses_aspect_ratio_snapping(SwashTool tool)
 {
-  return tool == WAYTATOR_TOOL_RECTANGLE || tool == WAYTATOR_TOOL_CIRCLE;
+  return tool == SWASH_TOOL_RECTANGLE || tool == SWASH_TOOL_CIRCLE;
 }
 
 static gboolean
-waytator_window_snap_modifier_active(GtkGestureDrag *gesture,
-                                     WaytatorWindow *self)
+swash_window_snap_modifier_active(GtkGestureDrag *gesture,
+                                     SwashWindow *self)
 {
   const GdkModifierType state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
 
@@ -517,7 +517,7 @@ waytator_window_snap_modifier_active(GtkGestureDrag *gesture,
 }
 
 static gboolean
-waytator_window_event_is_touch(GtkEventController *controller)
+swash_window_event_is_touch(GtkEventController *controller)
 {
   GdkDevice *device = gtk_event_controller_get_current_event_device(controller);
 
@@ -525,8 +525,8 @@ waytator_window_event_is_touch(GtkEventController *controller)
 }
 
 static void
-waytator_window_maybe_snap_shape_endpoint(GtkGestureDrag *gesture,
-                                          WaytatorWindow *self,
+swash_window_maybe_snap_shape_endpoint(GtkGestureDrag *gesture,
+                                          SwashWindow *self,
                                           double         *x,
                                           double         *y)
 {
@@ -536,18 +536,18 @@ waytator_window_maybe_snap_shape_endpoint(GtkGestureDrag *gesture,
       || y == NULL)
     return;
 
-  if (!waytator_window_snap_modifier_active(gesture, self))
+  if (!swash_window_snap_modifier_active(gesture, self))
     return;
 
   {
-    const WaytatorPoint *start = &g_array_index(self->current_stroke->points, WaytatorPoint, 0);
+    const SwashPoint *start = &g_array_index(self->current_stroke->points, SwashPoint, 0);
     const double dx = *x - start->x;
     const double dy = *y - start->y;
 
     if (fabs(dx) < 0.0001 && fabs(dy) < 0.0001)
       return;
 
-    if (waytator_tool_uses_angle_snapping(self->active_tool)) {
+    if (swash_tool_uses_angle_snapping(self->active_tool)) {
       const double distance = hypot(dx, dy);
       const double snapped_angle = round(atan2(dy, dx) / (G_PI / 4.0)) * (G_PI / 4.0);
 
@@ -556,7 +556,7 @@ waytator_window_maybe_snap_shape_endpoint(GtkGestureDrag *gesture,
       return;
     }
 
-    if (waytator_tool_uses_aspect_ratio_snapping(self->active_tool)) {
+    if (swash_tool_uses_aspect_ratio_snapping(self->active_tool)) {
       const double side = MAX(fabs(dx), fabs(dy));
 
       *x = start->x + (dx < 0.0 ? -side : side);
@@ -566,14 +566,14 @@ waytator_window_maybe_snap_shape_endpoint(GtkGestureDrag *gesture,
 }
 
 static gboolean
-waytator_window_erase_strokes(WaytatorWindow *self,
+swash_window_erase_strokes(SwashWindow *self,
                                double          x0,
                               double          y0,
                               double          x1,
                               double          y1)
 {
-  const double radius = self->tool_widths[WAYTATOR_TOOL_ERASER] / 2.0;
-  GPtrArray *strokes = waytator_window_strokes(self);
+  const double radius = self->tool_widths[SWASH_TOOL_ERASER] / 2.0;
+  GPtrArray *strokes = swash_window_strokes(self);
   gboolean removed_stroke = FALSE;
   guint i;
 
@@ -581,18 +581,18 @@ waytator_window_erase_strokes(WaytatorWindow *self,
     return FALSE;
 
   for (i = strokes->len; i > 0; i--) {
-    WaytatorStroke *stroke = g_ptr_array_index(strokes, i - 1);
+    SwashStroke *stroke = g_ptr_array_index(strokes, i - 1);
 
-    if (waytator_stroke_intersects_segment(stroke, x0, y0, x1, y1, radius)) {
-      waytator_window_record_interaction_undo_step(self);
+    if (swash_stroke_intersects_segment(stroke, x0, y0, x1, y1, radius)) {
+      swash_window_record_interaction_undo_step(self);
       g_ptr_array_remove_index(strokes, i - 1);
       removed_stroke = TRUE;
     }
   }
 
   if (removed_stroke) {
-    waytator_strokes_renumber(strokes);
-    waytator_window_reset_save_button(self);
+    swash_strokes_renumber(strokes);
+    swash_window_reset_save_button(self);
   }
 
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
@@ -600,11 +600,11 @@ waytator_window_erase_strokes(WaytatorWindow *self,
 }
 
 static void
-waytator_window_zoom_in_action(GtkWidget  *widget,
+swash_window_zoom_in_action(GtkWidget  *widget,
                                const char *action_name,
                                GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   double center_x;
   double center_y;
   double zoom;
@@ -612,18 +612,18 @@ waytator_window_zoom_in_action(GtkWidget  *widget,
   (void) action_name;
   (void) parameter;
 
-  if (!waytator_window_get_pointer_viewport_position(self, &center_x, &center_y))
-    waytator_window_get_viewport_center(self, &center_x, &center_y);
-  zoom = waytator_window_get_effective_zoom(self);
-  waytator_window_set_zoom_at(self, zoom * WAYTATOR_ZOOM_STEP, center_x, center_y);
+  if (!swash_window_get_pointer_viewport_position(self, &center_x, &center_y))
+    swash_window_get_viewport_center(self, &center_x, &center_y);
+  zoom = swash_window_get_effective_zoom(self);
+  swash_window_set_zoom_at(self, zoom * SWASH_ZOOM_STEP, center_x, center_y);
 }
 
 static void
-waytator_window_zoom_out_action(GtkWidget  *widget,
+swash_window_zoom_out_action(GtkWidget  *widget,
                                 const char *action_name,
                                 GVariant   *parameter)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(widget);
+  SwashWindow *self = SWASH_WINDOW(widget);
   double center_x;
   double center_y;
   double zoom;
@@ -631,30 +631,30 @@ waytator_window_zoom_out_action(GtkWidget  *widget,
   (void) action_name;
   (void) parameter;
 
-  if (!waytator_window_get_pointer_viewport_position(self, &center_x, &center_y))
-    waytator_window_get_viewport_center(self, &center_x, &center_y);
-  zoom = waytator_window_get_effective_zoom(self);
-  waytator_window_set_zoom_at(self, zoom / WAYTATOR_ZOOM_STEP, center_x, center_y);
+  if (!swash_window_get_pointer_viewport_position(self, &center_x, &center_y))
+    swash_window_get_viewport_center(self, &center_x, &center_y);
+  zoom = swash_window_get_effective_zoom(self);
+  swash_window_set_zoom_at(self, zoom / SWASH_ZOOM_STEP, center_x, center_y);
 }
 
 static void
-waytator_window_zoom_fit_action(GtkWidget  *widget,
+swash_window_zoom_fit_action(GtkWidget  *widget,
                                 const char *action_name,
                                 GVariant   *parameter)
 {
   (void) action_name;
   (void) parameter;
 
-  waytator_window_queue_fit_zoom(WAYTATOR_WINDOW(widget));
+  swash_window_queue_fit_zoom(SWASH_WINDOW(widget));
 }
 
 static void
-waytator_window_drag_begin(GtkGestureDrag *gesture,
+swash_window_drag_begin(GtkGestureDrag *gesture,
                            double          start_x,
                            double          start_y,
                            gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   GtkAdjustment *hadjustment;
   GtkAdjustment *vadjustment;
 
@@ -676,12 +676,12 @@ waytator_window_drag_begin(GtkGestureDrag *gesture,
 }
 
 static void
-waytator_window_drag_update(GtkGestureDrag *gesture,
+swash_window_drag_update(GtkGestureDrag *gesture,
                             double          offset_x,
                             double          offset_y,
                             gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   GtkAdjustment *hadjustment;
   GtkAdjustment *vadjustment;
 
@@ -696,12 +696,12 @@ waytator_window_drag_update(GtkGestureDrag *gesture,
   hadjustment = gtk_scrolled_window_get_hadjustment(self->canvas_scroller);
   vadjustment = gtk_scrolled_window_get_vadjustment(self->canvas_scroller);
 
-  waytator_window_set_adjustment_clamped(hadjustment, self->drag_start_hvalue - offset_x);
-  waytator_window_set_adjustment_clamped(vadjustment, self->drag_start_vvalue - offset_y);
+  swash_window_set_adjustment_clamped(hadjustment, self->drag_start_hvalue - offset_x);
+  swash_window_set_adjustment_clamped(vadjustment, self->drag_start_vvalue - offset_y);
 }
 
 static void
-waytator_window_begin_pan(WaytatorWindow *self)
+swash_window_begin_pan(SwashWindow *self)
 {
   GtkAdjustment *hadjustment = gtk_scrolled_window_get_hadjustment(self->canvas_scroller);
   GtkAdjustment *vadjustment = gtk_scrolled_window_get_vadjustment(self->canvas_scroller);
@@ -711,85 +711,85 @@ waytator_window_begin_pan(WaytatorWindow *self)
 }
 
 static void
-waytator_window_update_pan(WaytatorWindow *self,
+swash_window_update_pan(SwashWindow *self,
                            double          offset_x,
                            double          offset_y)
 {
   GtkAdjustment *hadjustment = gtk_scrolled_window_get_hadjustment(self->canvas_scroller);
   GtkAdjustment *vadjustment = gtk_scrolled_window_get_vadjustment(self->canvas_scroller);
 
-  waytator_window_set_adjustment_clamped(hadjustment, self->drag_start_hvalue - offset_x);
-  waytator_window_set_adjustment_clamped(vadjustment, self->drag_start_vvalue - offset_y);
+  swash_window_set_adjustment_clamped(hadjustment, self->drag_start_hvalue - offset_x);
+  swash_window_set_adjustment_clamped(vadjustment, self->drag_start_vvalue - offset_y);
 }
 
 static void
-waytator_window_pan_begin(GtkGestureDrag *gesture,
+swash_window_pan_begin(GtkGestureDrag *gesture,
                           double          start_x,
                           double          start_y,
                           gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) start_x;
   (void) start_y;
 
-  if (self->texture == NULL || self->active_tool != WAYTATOR_TOOL_PAN)
+  if (self->texture == NULL || self->active_tool != SWASH_TOOL_PAN)
     return;
 
-  if (!waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture)))
+  if (!swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture)))
     gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
 
   self->drawing = TRUE;
   self->interaction_has_undo_step = FALSE;
-  waytator_window_begin_pan(self);
+  swash_window_begin_pan(self);
 }
 
 static void
-waytator_window_pan_update(GtkGestureDrag *gesture,
+swash_window_pan_update(GtkGestureDrag *gesture,
                            double          offset_x,
                            double          offset_y,
                            gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) gesture;
 
-  if (self->texture == NULL || self->active_tool != WAYTATOR_TOOL_PAN || !self->drawing)
+  if (self->texture == NULL || self->active_tool != SWASH_TOOL_PAN || !self->drawing)
     return;
 
-  waytator_window_update_pan(self, offset_x, offset_y);
+  swash_window_update_pan(self, offset_x, offset_y);
 }
 
 static void
-waytator_window_pan_end(GtkGestureDrag *gesture,
+swash_window_pan_end(GtkGestureDrag *gesture,
                         double          offset_x,
                         double          offset_y,
                         gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) gesture;
   (void) offset_x;
   (void) offset_y;
 
-  if (self->active_tool == WAYTATOR_TOOL_PAN)
+  if (self->active_tool == SWASH_TOOL_PAN)
     self->drawing = FALSE;
 
   self->interaction_has_undo_step = FALSE;
 }
 
 static void
-waytator_window_crop_begin(GtkGestureDrag *gesture,
+swash_window_crop_begin(GtkGestureDrag *gesture,
                            double          start_x,
                            double          start_y,
                            gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
-  if (self->texture == NULL || self->active_tool != WAYTATOR_TOOL_CROP)
+  if (self->texture == NULL || self->active_tool != SWASH_TOOL_CROP)
     return;
 
-  if (!waytator_window_get_image_point(self,
+  if (!swash_window_get_image_point(self,
                                        start_x,
                                        start_y,
                                        FALSE,
@@ -797,7 +797,7 @@ waytator_window_crop_begin(GtkGestureDrag *gesture,
                                        &self->crop_start_y))
     return;
 
-  if (!waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture)))
+  if (!swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture)))
     gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
   self->drawing = TRUE;
   self->interaction_has_undo_step = FALSE;
@@ -807,20 +807,20 @@ waytator_window_crop_begin(GtkGestureDrag *gesture,
 }
 
 static void
-waytator_window_crop_update(GtkGestureDrag *gesture,
+swash_window_crop_update(GtkGestureDrag *gesture,
                             double          offset_x,
                             double          offset_y,
                             gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   double start_x;
   double start_y;
 
-  if (self->texture == NULL || self->active_tool != WAYTATOR_TOOL_CROP || !self->drawing)
+  if (self->texture == NULL || self->active_tool != SWASH_TOOL_CROP || !self->drawing)
     return;
 
   gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y);
-  if (!waytator_window_get_image_point(self,
+  if (!swash_window_get_image_point(self,
                                        start_x + offset_x,
                                        start_y + offset_y,
                                        TRUE,
@@ -832,17 +832,17 @@ waytator_window_crop_update(GtkGestureDrag *gesture,
 }
 
 static void
-waytator_window_crop_end(GtkGestureDrag *gesture,
+swash_window_crop_end(GtkGestureDrag *gesture,
                          double          offset_x,
                          double          offset_y,
                          gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) offset_x;
   (void) offset_y;
 
-  if (self->active_tool != WAYTATOR_TOOL_CROP || !self->drawing) {
+  if (self->active_tool != SWASH_TOOL_CROP || !self->drawing) {
     self->drawing = FALSE;
     return;
   }
@@ -858,7 +858,7 @@ waytator_window_crop_end(GtkGestureDrag *gesture,
     const int bottom = CLAMP((int) ceil(MAX(self->crop_start_y, self->crop_end_y)), 1, image_height);
 
     if (right > left && bottom > top)
-      waytator_window_apply_crop(self, left, top, right - left, bottom - top);
+      swash_window_apply_crop(self, left, top, right - left, bottom - top);
   }
 
   self->crop_start_x = 0.0;
@@ -870,7 +870,7 @@ waytator_window_crop_end(GtkGestureDrag *gesture,
 }
 
 static void
-waytator_window_text_editing_stop(WaytatorWindow *self)
+swash_window_text_editing_stop(SwashWindow *self)
 {
   self->text_editing = FALSE;
   self->text_cursor_visible = FALSE;
@@ -884,53 +884,53 @@ waytator_window_text_editing_stop(WaytatorWindow *self)
 }
 
 void
-waytator_window_text_editing_commit(WaytatorWindow *self)
+swash_window_text_editing_commit(SwashWindow *self)
 {
   if (!self->text_editing)
     return;
 
   if (self->current_stroke != NULL
       && (self->current_stroke->text == NULL || *self->current_stroke->text == '\0')) {
-    GPtrArray *strokes = waytator_window_strokes(self);
+    GPtrArray *strokes = swash_window_strokes(self);
 
     if (strokes != NULL)
       g_ptr_array_remove(strokes, self->current_stroke);
 
     self->current_stroke = NULL;
-    waytator_document_discard_undo_step(self->document);
-    waytator_window_refresh_document_state(self);
-    waytator_window_update_history_buttons(self);
+    swash_document_discard_undo_step(self->document);
+    swash_window_refresh_document_state(self);
+    swash_window_update_history_buttons(self);
   } else {
-    waytator_window_maybe_auto_copy_latest_change(self);
+    swash_window_maybe_auto_copy_latest_change(self);
     self->current_stroke = NULL;
   }
 
-  waytator_window_text_editing_stop(self);
+  swash_window_text_editing_stop(self);
 }
 
 static void
-waytator_window_text_editing_cancel(WaytatorWindow *self)
+swash_window_text_editing_cancel(SwashWindow *self)
 {
   GPtrArray *strokes;
 
   if (!self->text_editing)
     return;
 
-  strokes = waytator_window_strokes(self);
+  strokes = swash_window_strokes(self);
   if (self->current_stroke != NULL && strokes != NULL)
     g_ptr_array_remove(strokes, self->current_stroke);
 
   self->current_stroke = NULL;
-  waytator_document_discard_undo_step(self->document);
-  waytator_window_refresh_document_state(self);
-  waytator_window_update_history_buttons(self);
-  waytator_window_text_editing_stop(self);
+  swash_document_discard_undo_step(self->document);
+  swash_window_refresh_document_state(self);
+  swash_window_update_history_buttons(self);
+  swash_window_text_editing_stop(self);
 }
 
 static gboolean
-waytator_window_text_cursor_blink(gpointer user_data)
+swash_window_text_cursor_blink(gpointer user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   if (!self->text_editing) {
     self->text_cursor_blink_id = 0;
@@ -943,10 +943,10 @@ waytator_window_text_cursor_blink(gpointer user_data)
 }
 
 static void
-waytator_window_text_input_changed(GtkEditable *editable,
+swash_window_text_input_changed(GtkEditable *editable,
                                    gpointer     user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   const char *text;
 
   if (!self->text_editing || self->current_stroke == NULL)
@@ -958,30 +958,30 @@ waytator_window_text_input_changed(GtkEditable *editable,
   self->text_cursor_visible = TRUE;
   if (self->text_cursor_blink_id != 0)
     g_source_remove(self->text_cursor_blink_id);
-  self->text_cursor_blink_id = g_timeout_add(530, waytator_window_text_cursor_blink, self);
+  self->text_cursor_blink_id = g_timeout_add(530, swash_window_text_cursor_blink, self);
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
 }
 
 static void
-waytator_window_text_input_focus_lost(GtkEventControllerFocus *controller,
+swash_window_text_input_focus_lost(GtkEventControllerFocus *controller,
                                       gpointer                 user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) controller;
 
   if (self->text_editing)
-    waytator_window_text_editing_commit(self);
+    swash_window_text_editing_commit(self);
 }
 
 static gboolean
-waytator_window_text_input_key_pressed(GtkEventControllerKey *controller,
+swash_window_text_input_key_pressed(GtkEventControllerKey *controller,
                                        guint                  keyval,
                                        guint                  keycode,
                                        GdkModifierType        state,
                                        gpointer               user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) controller;
   (void) keycode;
@@ -991,12 +991,12 @@ waytator_window_text_input_key_pressed(GtkEventControllerKey *controller,
     return FALSE;
 
   if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) {
-    waytator_window_text_editing_commit(self);
+    swash_window_text_editing_commit(self);
     return TRUE;
   }
 
   if (keyval == GDK_KEY_Escape) {
-    waytator_window_text_editing_cancel(self);
+    swash_window_text_editing_cancel(self);
     return TRUE;
   }
 
@@ -1004,29 +1004,29 @@ waytator_window_text_input_key_pressed(GtkEventControllerKey *controller,
 }
 
 static void
-waytator_window_draw_begin(GtkGestureDrag *gesture,
+swash_window_draw_begin(GtkGestureDrag *gesture,
                            double          start_x,
                            double          start_y,
                            gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
-  const gboolean is_touch = waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture));
+  SwashWindow *self = SWASH_WINDOW(user_data);
+  const gboolean is_touch = swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture));
 
   if (self->text_editing) {
-    waytator_window_text_editing_commit(self);
+    swash_window_text_editing_commit(self);
     return;
   }
 
   if (self->texture == NULL)
     return;
 
-  if (waytator_tool_is_non_drawing(self->active_tool))
+  if (swash_tool_is_non_drawing(self->active_tool))
     return;
 
-  if (!waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture)))
+  if (!swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture)))
     gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
 
-  if (!waytator_window_get_image_point(self,
+  if (!swash_window_get_image_point(self,
                                        start_x,
                                        start_y,
                                        FALSE,
@@ -1037,19 +1037,19 @@ waytator_window_draw_begin(GtkGestureDrag *gesture,
   self->drawing = TRUE;
   self->interaction_has_undo_step = FALSE;
 
-  if (self->active_tool == WAYTATOR_TOOL_MOVE) {
-    GPtrArray *strokes = waytator_window_strokes(self);
+  if (self->active_tool == SWASH_TOOL_MOVE) {
+    GPtrArray *strokes = swash_window_strokes(self);
 
     self->selected_stroke = NULL;
     if (strokes != NULL) {
       for (int i = (int) strokes->len - 1; i >= 0; i--) {
-        WaytatorStroke *stroke = g_ptr_array_index(strokes, i);
+        SwashStroke *stroke = g_ptr_array_index(strokes, i);
 
-        if (waytator_stroke_hit_test(stroke, self->last_draw_x, self->last_draw_y, 8.0)) {
+        if (swash_stroke_hit_test(stroke, self->last_draw_x, self->last_draw_y, 8.0)) {
           self->selected_stroke = stroke;
           self->move_start_x = self->last_draw_x;
           self->move_start_y = self->last_draw_y;
-          waytator_window_record_undo_step(self);
+          swash_window_record_undo_step(self);
           self->interaction_has_undo_step = TRUE;
           break;
         }
@@ -1069,12 +1069,12 @@ waytator_window_draw_begin(GtkGestureDrag *gesture,
   if (is_touch)
     return;
 
-  waytator_window_begin_draw_stroke(self);
+  swash_window_begin_draw_stroke(self);
 
-  if (self->active_tool == WAYTATOR_TOOL_ERASER) {
+  if (self->active_tool == SWASH_TOOL_ERASER) {
     self->pointer_x = self->last_draw_x;
     self->pointer_y = self->last_draw_y;
-    waytator_window_erase_strokes(self,
+    swash_window_erase_strokes(self,
                                   self->last_draw_x,
                                   self->last_draw_y,
                                   self->last_draw_x,
@@ -1084,12 +1084,12 @@ waytator_window_draw_begin(GtkGestureDrag *gesture,
 }
 
 static void
-waytator_window_draw_update(GtkGestureDrag *gesture,
+swash_window_draw_update(GtkGestureDrag *gesture,
                             double          offset_x,
                             double          offset_y,
                             gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   GdkEventSequence *sequence = gtk_gesture_single_get_current_sequence(GTK_GESTURE_SINGLE(gesture));
   double start_x;
   double start_y;
@@ -1099,16 +1099,16 @@ waytator_window_draw_update(GtkGestureDrag *gesture,
   if (!self->drawing || self->texture == NULL)
     return;
 
-  if (waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture))
+  if (swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture))
       && sequence != NULL
       && sequence == self->cancelled_touch_draw_sequence)
     return;
 
-  if (waytator_tool_is_non_drawing(self->active_tool))
+  if (swash_tool_is_non_drawing(self->active_tool))
     return;
 
   gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y);
-  if (!waytator_window_get_image_point(self,
+  if (!swash_window_get_image_point(self,
                                        start_x + offset_x,
                                        start_y + offset_y,
                                        TRUE,
@@ -1116,15 +1116,15 @@ waytator_window_draw_update(GtkGestureDrag *gesture,
                                        &image_y))
     return;
 
-  if (self->active_tool == WAYTATOR_TOOL_NUMBERING)
+  if (self->active_tool == SWASH_TOOL_NUMBERING)
     return;
 
-  if (self->active_tool == WAYTATOR_TOOL_MOVE) {
+  if (self->active_tool == SWASH_TOOL_MOVE) {
     if (self->selected_stroke != NULL) {
       const double dx = image_x - self->move_start_x;
       const double dy = image_y - self->move_start_y;
 
-      waytator_stroke_offset(self->selected_stroke, dx, dy);
+      swash_stroke_offset(self->selected_stroke, dx, dy);
       self->move_start_x = image_x;
       self->move_start_y = image_y;
       gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
@@ -1132,26 +1132,26 @@ waytator_window_draw_update(GtkGestureDrag *gesture,
     return;
   }
 
-  if (self->active_tool == WAYTATOR_TOOL_ERASER) {
+  if (self->active_tool == SWASH_TOOL_ERASER) {
     self->pointer_x = image_x;
     self->pointer_y = image_y;
-    waytator_window_erase_strokes(self,
+    swash_window_erase_strokes(self,
                                   self->last_draw_x,
                                   self->last_draw_y,
                                   image_x,
                                   image_y);
   } else {
-    waytator_window_begin_draw_stroke(self);
+    swash_window_begin_draw_stroke(self);
 
     if (self->current_stroke == NULL)
       return;
 
-    waytator_window_maybe_snap_shape_endpoint(gesture, self, &image_x, &image_y);
+    swash_window_maybe_snap_shape_endpoint(gesture, self, &image_x, &image_y);
 
-    if (waytator_tool_is_shape(self->active_tool))
-      waytator_stroke_set_last_point(self->current_stroke, image_x, image_y);
+    if (swash_tool_is_shape(self->active_tool))
+      swash_stroke_set_last_point(self->current_stroke, image_x, image_y);
     else
-      waytator_stroke_add_point(self->current_stroke, image_x, image_y);
+      swash_stroke_add_point(self->current_stroke, image_x, image_y);
 
     gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
   }
@@ -1161,12 +1161,12 @@ waytator_window_draw_update(GtkGestureDrag *gesture,
 }
 
 static void
-waytator_window_draw_end(GtkGestureDrag *gesture,
+swash_window_draw_end(GtkGestureDrag *gesture,
                          double          offset_x,
                          double          offset_y,
                          gpointer        user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   const gboolean was_drawing = self->drawing;
   GdkEventSequence *sequence = gtk_gesture_single_get_current_sequence(GTK_GESTURE_SINGLE(gesture));
   double start_x;
@@ -1176,7 +1176,7 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
 
   self->drawing = FALSE;
 
-  if (waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture))
+  if (swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture))
       && sequence != NULL
       && sequence == self->active_touch_draw_sequence)
     self->active_touch_draw_sequence = NULL;
@@ -1184,7 +1184,7 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
   if (!was_drawing)
     goto done;
 
-  if (waytator_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture))
+  if (swash_window_event_is_touch(GTK_EVENT_CONTROLLER(gesture))
       && sequence != NULL
       && sequence == self->cancelled_touch_draw_sequence)
     goto done;
@@ -1192,35 +1192,35 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
   if (self->texture == NULL)
     goto done;
 
-  if (waytator_tool_is_non_drawing(self->active_tool))
+  if (swash_tool_is_non_drawing(self->active_tool))
     goto done;
 
-  if (self->active_tool == WAYTATOR_TOOL_MOVE) {
+  if (self->active_tool == SWASH_TOOL_MOVE) {
     if (self->selected_stroke != NULL && !self->interaction_has_undo_step) {
-      waytator_document_discard_undo_step(self->document);
-      waytator_window_update_history_buttons(self);
+      swash_document_discard_undo_step(self->document);
+      swash_window_update_history_buttons(self);
     }
     if (self->interaction_has_undo_step)
-      waytator_window_maybe_auto_copy_latest_change(self);
+      swash_window_maybe_auto_copy_latest_change(self);
     self->selected_stroke = NULL;
     self->interaction_has_undo_step = FALSE;
     gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
     goto done;
   }
 
-  if (self->active_tool == WAYTATOR_TOOL_ERASER) {
+  if (self->active_tool == SWASH_TOOL_ERASER) {
     const gboolean erased_anything = self->interaction_has_undo_step;
 
     self->interaction_has_undo_step = FALSE;
     if (erased_anything)
-      waytator_window_maybe_auto_copy_latest_change(self);
+      swash_window_maybe_auto_copy_latest_change(self);
     goto done;
   }
 
   if (!gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y))
     goto done;
 
-  if (!waytator_window_get_image_point(self,
+  if (!swash_window_get_image_point(self,
                                        start_x + offset_x,
                                        start_y + offset_y,
                                        TRUE,
@@ -1229,19 +1229,19 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
     goto done;
 
   if (self->current_stroke == NULL)
-    waytator_window_begin_draw_stroke(self);
+    swash_window_begin_draw_stroke(self);
 
   if (self->current_stroke == NULL)
     goto done;
 
-  waytator_window_maybe_snap_shape_endpoint(gesture, self, &image_x, &image_y);
+  swash_window_maybe_snap_shape_endpoint(gesture, self, &image_x, &image_y);
 
-  if (waytator_tool_is_shape(self->active_tool))
-    waytator_stroke_set_last_point(self->current_stroke, image_x, image_y);
+  if (swash_tool_is_shape(self->active_tool))
+    swash_stroke_set_last_point(self->current_stroke, image_x, image_y);
   else
-    waytator_stroke_add_point(self->current_stroke, image_x, image_y);
+    swash_stroke_add_point(self->current_stroke, image_x, image_y);
 
-  if (self->active_tool == WAYTATOR_TOOL_TEXT) {
+  if (self->active_tool == SWASH_TOOL_TEXT) {
     self->text_editing = TRUE;
     self->text_cursor_visible = TRUE;
     g_free(self->current_stroke->text);
@@ -1249,32 +1249,32 @@ waytator_window_draw_end(GtkGestureDrag *gesture,
     gtk_editable_set_text(GTK_EDITABLE(self->text_input_hidden), "");
     gtk_widget_set_visible(self->text_input_hidden, TRUE);
     gtk_widget_grab_focus(self->text_input_hidden);
-    self->text_cursor_blink_id = g_timeout_add(530, waytator_window_text_cursor_blink, self);
+    self->text_cursor_blink_id = g_timeout_add(530, swash_window_text_cursor_blink, self);
   }
 
   gtk_widget_queue_draw(GTK_WIDGET(self->drawing_area));
-  if (self->active_tool != WAYTATOR_TOOL_TEXT)
-    waytator_window_maybe_auto_copy_latest_change(self);
+  if (self->active_tool != SWASH_TOOL_TEXT)
+    swash_window_maybe_auto_copy_latest_change(self);
 
 done:
   self->interaction_has_undo_step = FALSE;
   if (sequence != NULL && sequence == self->cancelled_touch_draw_sequence)
     self->cancelled_touch_draw_sequence = NULL;
-  self->current_stroke = (self->active_tool == WAYTATOR_TOOL_TEXT) ? self->current_stroke : NULL;
+  self->current_stroke = (self->active_tool == SWASH_TOOL_TEXT) ? self->current_stroke : NULL;
 }
 
 static gboolean
-waytator_window_scroll_zoom(GtkEventControllerScroll *controller,
+swash_window_scroll_zoom(GtkEventControllerScroll *controller,
                             double                    dx,
                             double                    dy,
                             gpointer                  user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   GdkModifierType state;
   GdkEvent *event;
   double anchor_x;
   double anchor_y;
-  const double zoom = waytator_window_get_effective_zoom(self);
+  const double zoom = swash_window_get_effective_zoom(self);
 
   (void) dx;
 
@@ -1287,12 +1287,12 @@ waytator_window_scroll_zoom(GtkEventControllerScroll *controller,
 
   event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
   if (event == NULL || !gdk_event_get_position(event, &anchor_x, &anchor_y)) {
-    if (!waytator_window_get_pointer_viewport_position(self, &anchor_x, &anchor_y))
-      waytator_window_get_viewport_center(self, &anchor_x, &anchor_y);
+    if (!swash_window_get_pointer_viewport_position(self, &anchor_x, &anchor_y))
+      swash_window_get_viewport_center(self, &anchor_x, &anchor_y);
   }
 
-  waytator_window_set_zoom_at(self,
-                              zoom * pow(WAYTATOR_ZOOM_STEP, -dy),
+  swash_window_set_zoom_at(self,
+                              zoom * pow(SWASH_ZOOM_STEP, -dy),
                               anchor_x,
                               anchor_y);
 
@@ -1300,11 +1300,11 @@ waytator_window_scroll_zoom(GtkEventControllerScroll *controller,
 }
 
 static void
-waytator_window_zoom_gesture_begin(GtkGesture       *gesture,
+swash_window_zoom_gesture_begin(GtkGesture       *gesture,
                                    GdkEventSequence *sequence,
                                    gpointer          user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   double surface_x;
   double surface_y;
   double viewport_x;
@@ -1315,17 +1315,17 @@ waytator_window_zoom_gesture_begin(GtkGesture       *gesture,
   if (self->texture == NULL)
     return;
 
-  waytator_window_cancel_current_interaction(self);
-  waytator_window_cancel_touch_tool_gestures(self);
+  swash_window_cancel_current_interaction(self);
+  swash_window_cancel_touch_tool_gestures(self);
   gtk_gesture_set_state(gesture, GTK_EVENT_SEQUENCE_CLAIMED);
-  self->pinch_start_zoom = waytator_window_get_effective_zoom(self);
-  if (!waytator_window_get_zoom_gesture_center(self,
+  self->pinch_start_zoom = swash_window_get_effective_zoom(self);
+  if (!swash_window_get_zoom_gesture_center(self,
                                               gesture,
                                               &surface_x,
                                               &surface_y,
                                               &viewport_x,
                                               &viewport_y)) {
-    waytator_window_get_viewport_center(self,
+    swash_window_get_viewport_center(self,
                                         &viewport_x,
                                         &viewport_y);
     surface_x = viewport_x;
@@ -1343,7 +1343,7 @@ waytator_window_zoom_gesture_begin(GtkGesture       *gesture,
     double widget_width = gtk_widget_get_width(self->canvas_surface);
     double widget_height = gtk_widget_get_height(self->canvas_surface);
 
-    if (!waytator_window_get_display_rect(self,
+    if (!swash_window_get_display_rect(self,
                                           widget_width,
                                           widget_height,
                                           &display_x,
@@ -1365,29 +1365,29 @@ waytator_window_zoom_gesture_begin(GtkGesture       *gesture,
 }
 
 static void
-waytator_window_zoom_gesture_update(GtkGesture *gesture,
+swash_window_zoom_gesture_update(GtkGesture *gesture,
                                     GdkEventSequence *sequence,
                                     gpointer          user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
   (void) sequence;
 
   if (self->texture == NULL)
     return;
 
   gtk_gesture_set_state(gesture, GTK_EVENT_SEQUENCE_CLAIMED);
-  waytator_window_apply_pinch_gesture(self,
+  swash_window_apply_pinch_gesture(self,
                                       GTK_GESTURE_ZOOM(gesture),
                                       gtk_gesture_zoom_get_scale_delta(GTK_GESTURE_ZOOM(gesture)));
 }
 
 static void
-waytator_window_pointer_enter(GtkEventControllerMotion *controller,
+swash_window_pointer_enter(GtkEventControllerMotion *controller,
                               double                    x,
                               double                    y,
                               gpointer                  user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) controller;
 
@@ -1398,10 +1398,10 @@ waytator_window_pointer_enter(GtkEventControllerMotion *controller,
 }
 
 static void
-waytator_window_pointer_leave(GtkEventControllerMotion *controller,
+swash_window_pointer_leave(GtkEventControllerMotion *controller,
                               gpointer                  user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) controller;
 
@@ -1410,18 +1410,18 @@ waytator_window_pointer_leave(GtkEventControllerMotion *controller,
 }
 
 static void
-waytator_window_pointer_motion(GtkEventControllerMotion *controller,
+swash_window_pointer_motion(GtkEventControllerMotion *controller,
                                double                    x,
                                double                    y,
                                gpointer                  user_data)
 {
-  WaytatorWindow *self = WAYTATOR_WINDOW(user_data);
+  SwashWindow *self = SWASH_WINDOW(user_data);
 
   (void) controller;
 
   self->pointer_widget_x = x;
   self->pointer_widget_y = y;
-  if (!waytator_window_get_image_point(self, x, y, TRUE, &self->pointer_x, &self->pointer_y))
+  if (!swash_window_get_image_point(self, x, y, TRUE, &self->pointer_x, &self->pointer_y))
     return;
 
   if (self->pointer_in)
@@ -1429,16 +1429,16 @@ waytator_window_pointer_motion(GtkEventControllerMotion *controller,
 }
 
 void
-waytator_window_install_canvas_actions(GtkWidgetClass *widget_class)
+swash_window_install_canvas_actions(GtkWidgetClass *widget_class)
 {
-  waytator_window_install_history_actions(widget_class);
-  gtk_widget_class_install_action(widget_class, "win.zoom-in", NULL, waytator_window_zoom_in_action);
-  gtk_widget_class_install_action(widget_class, "win.zoom-out", NULL, waytator_window_zoom_out_action);
-  gtk_widget_class_install_action(widget_class, "win.zoom-fit", NULL, waytator_window_zoom_fit_action);
+  swash_window_install_history_actions(widget_class);
+  gtk_widget_class_install_action(widget_class, "win.zoom-in", NULL, swash_window_zoom_in_action);
+  gtk_widget_class_install_action(widget_class, "win.zoom-out", NULL, swash_window_zoom_out_action);
+  gtk_widget_class_install_action(widget_class, "win.zoom-fit", NULL, swash_window_zoom_fit_action);
 }
 
 void
-waytator_window_setup_controllers(WaytatorWindow *self)
+swash_window_setup_controllers(SwashWindow *self)
 {
   GtkEventController *scroll;
   GtkEventController *keys;
@@ -1453,65 +1453,65 @@ waytator_window_setup_controllers(WaytatorWindow *self)
 
   drag = gtk_gesture_drag_new();
   gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(drag), GDK_BUTTON_MIDDLE);
-  g_signal_connect(drag, "drag-begin", G_CALLBACK(waytator_window_drag_begin), self);
-  g_signal_connect(drag, "drag-update", G_CALLBACK(waytator_window_drag_update), self);
+  g_signal_connect(drag, "drag-begin", G_CALLBACK(swash_window_drag_begin), self);
+  g_signal_connect(drag, "drag-update", G_CALLBACK(swash_window_drag_update), self);
   gtk_widget_add_controller(GTK_WIDGET(self->canvas_scroller), GTK_EVENT_CONTROLLER(drag));
 
   pan_drag = gtk_gesture_drag_new();
   gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(pan_drag), GDK_BUTTON_PRIMARY);
-  g_signal_connect(pan_drag, "drag-begin", G_CALLBACK(waytator_window_pan_begin), self);
-  g_signal_connect(pan_drag, "drag-update", G_CALLBACK(waytator_window_pan_update), self);
-  g_signal_connect(pan_drag, "drag-end", G_CALLBACK(waytator_window_pan_end), self);
+  g_signal_connect(pan_drag, "drag-begin", G_CALLBACK(swash_window_pan_begin), self);
+  g_signal_connect(pan_drag, "drag-update", G_CALLBACK(swash_window_pan_update), self);
+  g_signal_connect(pan_drag, "drag-end", G_CALLBACK(swash_window_pan_end), self);
   gtk_widget_add_controller(GTK_WIDGET(self->canvas_scroller), GTK_EVENT_CONTROLLER(pan_drag));
 
   pan_drag_touch = gtk_gesture_drag_new();
   gtk_gesture_single_set_touch_only(GTK_GESTURE_SINGLE(pan_drag_touch), TRUE);
-  g_signal_connect(pan_drag_touch, "drag-begin", G_CALLBACK(waytator_window_pan_begin), self);
-  g_signal_connect(pan_drag_touch, "drag-update", G_CALLBACK(waytator_window_pan_update), self);
-  g_signal_connect(pan_drag_touch, "drag-end", G_CALLBACK(waytator_window_pan_end), self);
+  g_signal_connect(pan_drag_touch, "drag-begin", G_CALLBACK(swash_window_pan_begin), self);
+  g_signal_connect(pan_drag_touch, "drag-update", G_CALLBACK(swash_window_pan_update), self);
+  g_signal_connect(pan_drag_touch, "drag-end", G_CALLBACK(swash_window_pan_end), self);
   gtk_widget_add_controller(self->canvas_surface, GTK_EVENT_CONTROLLER(pan_drag_touch));
   self->touch_pan_gesture = pan_drag_touch;
 
   crop = gtk_gesture_drag_new();
   gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(crop), GDK_BUTTON_PRIMARY);
-  g_signal_connect(crop, "drag-begin", G_CALLBACK(waytator_window_crop_begin), self);
-  g_signal_connect(crop, "drag-update", G_CALLBACK(waytator_window_crop_update), self);
-  g_signal_connect(crop, "drag-end", G_CALLBACK(waytator_window_crop_end), self);
+  g_signal_connect(crop, "drag-begin", G_CALLBACK(swash_window_crop_begin), self);
+  g_signal_connect(crop, "drag-update", G_CALLBACK(swash_window_crop_update), self);
+  g_signal_connect(crop, "drag-end", G_CALLBACK(swash_window_crop_end), self);
   gtk_widget_add_controller(GTK_WIDGET(self->drawing_area), GTK_EVENT_CONTROLLER(crop));
   self->crop_gesture = crop;
 
   draw = gtk_gesture_drag_new();
   gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(draw), GDK_BUTTON_PRIMARY);
-  g_signal_connect(draw, "drag-begin", G_CALLBACK(waytator_window_draw_begin), self);
-  g_signal_connect(draw, "drag-update", G_CALLBACK(waytator_window_draw_update), self);
-  g_signal_connect(draw, "drag-end", G_CALLBACK(waytator_window_draw_end), self);
+  g_signal_connect(draw, "drag-begin", G_CALLBACK(swash_window_draw_begin), self);
+  g_signal_connect(draw, "drag-update", G_CALLBACK(swash_window_draw_update), self);
+  g_signal_connect(draw, "drag-end", G_CALLBACK(swash_window_draw_end), self);
   gtk_widget_add_controller(GTK_WIDGET(self->drawing_area), GTK_EVENT_CONTROLLER(draw));
   self->draw_gesture = draw;
 
   zoom = gtk_gesture_zoom_new();
-  g_signal_connect(zoom, "begin", G_CALLBACK(waytator_window_zoom_gesture_begin), self);
-  g_signal_connect(zoom, "update", G_CALLBACK(waytator_window_zoom_gesture_update), self);
+  g_signal_connect(zoom, "begin", G_CALLBACK(swash_window_zoom_gesture_begin), self);
+  g_signal_connect(zoom, "update", G_CALLBACK(swash_window_zoom_gesture_update), self);
   gtk_widget_add_controller(self->canvas_surface, GTK_EVENT_CONTROLLER(zoom));
   self->zoom_gesture = zoom;
 
   legacy = gtk_event_controller_legacy_new();
   gtk_event_controller_set_propagation_phase(legacy, GTK_PHASE_CAPTURE);
-  g_signal_connect(legacy, "event", G_CALLBACK(waytator_window_touch_event), self);
+  g_signal_connect(legacy, "event", G_CALLBACK(swash_window_touch_event), self);
   gtk_widget_add_controller(self->canvas_surface, legacy);
   self->touch_legacy_controller = legacy;
 
   motion = gtk_event_controller_motion_new();
-  g_signal_connect(motion, "enter", G_CALLBACK(waytator_window_pointer_enter), self);
-  g_signal_connect(motion, "leave", G_CALLBACK(waytator_window_pointer_leave), self);
-  g_signal_connect(motion, "motion", G_CALLBACK(waytator_window_pointer_motion), self);
+  g_signal_connect(motion, "enter", G_CALLBACK(swash_window_pointer_enter), self);
+  g_signal_connect(motion, "leave", G_CALLBACK(swash_window_pointer_leave), self);
+  g_signal_connect(motion, "motion", G_CALLBACK(swash_window_pointer_motion), self);
   gtk_widget_add_controller(GTK_WIDGET(self->drawing_area), motion);
 
   scroll = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
-  g_signal_connect(scroll, "scroll", G_CALLBACK(waytator_window_scroll_zoom), self);
+  g_signal_connect(scroll, "scroll", G_CALLBACK(swash_window_scroll_zoom), self);
   gtk_widget_add_controller(GTK_WIDGET(self->canvas_scroller), scroll);
 
   keys = gtk_event_controller_key_new();
-  g_signal_connect(keys, "key-pressed", G_CALLBACK(waytator_window_global_key_pressed), self);
+  g_signal_connect(keys, "key-pressed", G_CALLBACK(swash_window_global_key_pressed), self);
   gtk_widget_add_controller(GTK_WIDGET(self), keys);
 
   {
@@ -1525,11 +1525,11 @@ waytator_window_setup_controllers(WaytatorWindow *self)
     gtk_widget_set_visible(text_input, FALSE);
     gtk_widget_set_can_focus(text_input, TRUE);
     gtk_overlay_add_overlay(GTK_OVERLAY(self->canvas_surface), text_input);
-    g_signal_connect(text_input, "changed", G_CALLBACK(waytator_window_text_input_changed), self);
+    g_signal_connect(text_input, "changed", G_CALLBACK(swash_window_text_input_changed), self);
     gtk_event_controller_set_propagation_phase(text_keys, GTK_PHASE_CAPTURE);
-    g_signal_connect(text_keys, "key-pressed", G_CALLBACK(waytator_window_text_input_key_pressed), self);
+    g_signal_connect(text_keys, "key-pressed", G_CALLBACK(swash_window_text_input_key_pressed), self);
     gtk_widget_add_controller(text_input, text_keys);
-    g_signal_connect(text_focus, "leave", G_CALLBACK(waytator_window_text_input_focus_lost), self);
+    g_signal_connect(text_focus, "leave", G_CALLBACK(swash_window_text_input_focus_lost), self);
     gtk_widget_add_controller(text_input, text_focus);
     self->text_input_hidden = text_input;
   }

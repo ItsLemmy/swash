@@ -1,8 +1,8 @@
-#include "waytator-document.h"
+#include "document.h"
 
-#include "waytator-stroke.h"
+#include "stroke.h"
 
-#define WAYTATOR_HISTORY_LIMIT 50
+#define SWASH_HISTORY_LIMIT 50
 
 typedef struct {
   GBytes *image_pixels;
@@ -10,55 +10,55 @@ typedef struct {
   int image_height;
   gsize image_stride;
   GPtrArray *strokes;
-} WaytatorDocumentSnapshot;
+} SwashDocumentSnapshot;
 
-struct _WaytatorDocument {
+struct _SwashDocument {
   GPtrArray *strokes;
   GBytes *image_pixels;
   int image_width;
   int image_height;
   gsize image_stride;
   guint image_generation;
-  WaytatorDocumentSnapshot *saved_state;
+  SwashDocumentSnapshot *saved_state;
   GQueue *undo_history;
   GQueue *redo_history;
 };
 
 static GPtrArray *
-waytator_stroke_array_copy(GPtrArray *strokes)
+swash_stroke_array_copy(GPtrArray *strokes)
 {
-  GPtrArray *copy = g_ptr_array_new_with_free_func((GDestroyNotify) waytator_stroke_free);
+  GPtrArray *copy = g_ptr_array_new_with_free_func((GDestroyNotify) swash_stroke_free);
 
   if (strokes == NULL)
     return copy;
 
   for (guint i = 0; i < strokes->len; i++)
-    g_ptr_array_add(copy, waytator_stroke_copy(g_ptr_array_index(strokes, i)));
+    g_ptr_array_add(copy, swash_stroke_copy(g_ptr_array_index(strokes, i)));
 
   return copy;
 }
 
-static WaytatorDocumentSnapshot *
-waytator_document_snapshot_new(GBytes    *image_pixels,
+static SwashDocumentSnapshot *
+swash_document_snapshot_new(GBytes    *image_pixels,
                                int        image_width,
                                int        image_height,
                                gsize      image_stride,
                                GPtrArray *strokes)
 {
-  WaytatorDocumentSnapshot *snapshot = g_new0(WaytatorDocumentSnapshot, 1);
+  SwashDocumentSnapshot *snapshot = g_new0(SwashDocumentSnapshot, 1);
 
   snapshot->image_pixels = image_pixels != NULL ? g_bytes_ref(image_pixels) : NULL;
   snapshot->image_width = image_width;
   snapshot->image_height = image_height;
   snapshot->image_stride = image_stride;
-  snapshot->strokes = waytator_stroke_array_copy(strokes);
+  snapshot->strokes = swash_stroke_array_copy(strokes);
   return snapshot;
 }
 
-static WaytatorDocumentSnapshot *
-waytator_document_snapshot_from_document(WaytatorDocument *document)
+static SwashDocumentSnapshot *
+swash_document_snapshot_from_document(SwashDocument *document)
 {
-  return waytator_document_snapshot_new(document->image_pixels,
+  return swash_document_snapshot_new(document->image_pixels,
                                         document->image_width,
                                         document->image_height,
                                         document->image_stride,
@@ -66,7 +66,7 @@ waytator_document_snapshot_from_document(WaytatorDocument *document)
 }
 
 static void
-waytator_document_snapshot_free(WaytatorDocumentSnapshot *snapshot)
+swash_document_snapshot_free(SwashDocumentSnapshot *snapshot)
 {
   if (snapshot == NULL)
     return;
@@ -77,8 +77,8 @@ waytator_document_snapshot_free(WaytatorDocumentSnapshot *snapshot)
 }
 
 static gboolean
-waytator_stroke_equal(WaytatorStroke *left,
-                      WaytatorStroke *right)
+swash_stroke_equal(SwashStroke *left,
+                      SwashStroke *right)
 {
   if (left == right)
     return TRUE;
@@ -99,11 +99,11 @@ waytator_stroke_equal(WaytatorStroke *left,
 
   return memcmp(left->points->data,
                 right->points->data,
-                left->points->len * sizeof(WaytatorPoint)) == 0;
+                left->points->len * sizeof(SwashPoint)) == 0;
 }
 
 static gboolean
-waytator_stroke_array_equal(GPtrArray *left,
+swash_stroke_array_equal(GPtrArray *left,
                             GPtrArray *right)
 {
   if (left == right)
@@ -113,7 +113,7 @@ waytator_stroke_array_equal(GPtrArray *left,
     return FALSE;
 
   for (guint i = 0; i < left->len; i++) {
-    if (!waytator_stroke_equal(g_ptr_array_index(left, i),
+    if (!swash_stroke_equal(g_ptr_array_index(left, i),
                                g_ptr_array_index(right, i)))
       return FALSE;
   }
@@ -122,7 +122,7 @@ waytator_stroke_array_equal(GPtrArray *left,
 }
 
 static gboolean
-waytator_document_image_equal(GBytes *left_pixels,
+swash_document_image_equal(GBytes *left_pixels,
                               int     left_width,
                               int     left_height,
                               gsize   left_stride,
@@ -146,8 +146,8 @@ waytator_document_image_equal(GBytes *left_pixels,
 }
 
 static gboolean
-waytator_document_snapshot_equal(WaytatorDocumentSnapshot *left,
-                                 WaytatorDocumentSnapshot *right)
+swash_document_snapshot_equal(SwashDocumentSnapshot *left,
+                                 SwashDocumentSnapshot *right)
 {
   if (left == right)
     return TRUE;
@@ -155,7 +155,7 @@ waytator_document_snapshot_equal(WaytatorDocumentSnapshot *left,
   if (left == NULL || right == NULL)
     return FALSE;
 
-  return waytator_document_image_equal(left->image_pixels,
+  return swash_document_image_equal(left->image_pixels,
                                        left->image_width,
                                        left->image_height,
                                        left->image_stride,
@@ -163,12 +163,12 @@ waytator_document_snapshot_equal(WaytatorDocumentSnapshot *left,
                                        right->image_width,
                                        right->image_height,
                                        right->image_stride)
-      && waytator_stroke_array_equal(left->strokes, right->strokes);
+      && swash_stroke_array_equal(left->strokes, right->strokes);
 }
 
 static void
-waytator_document_apply_snapshot(WaytatorDocument         *document,
-                                 WaytatorDocumentSnapshot *snapshot)
+swash_document_apply_snapshot(SwashDocument         *document,
+                                 SwashDocumentSnapshot *snapshot)
 {
   gboolean image_changed = document->image_pixels != snapshot->image_pixels;
 
@@ -184,53 +184,53 @@ waytator_document_apply_snapshot(WaytatorDocument         *document,
   if (image_changed)
     document->image_generation++;
 
-  waytator_document_snapshot_free(snapshot);
+  swash_document_snapshot_free(snapshot);
 }
 
 static void
-waytator_document_trim_history(GQueue *history)
+swash_document_trim_history(GQueue *history)
 {
-  while (g_queue_get_length(history) > WAYTATOR_HISTORY_LIMIT) {
-    WaytatorDocumentSnapshot *snapshot = g_queue_pop_head(history);
+  while (g_queue_get_length(history) > SWASH_HISTORY_LIMIT) {
+    SwashDocumentSnapshot *snapshot = g_queue_pop_head(history);
 
-    waytator_document_snapshot_free(snapshot);
+    swash_document_snapshot_free(snapshot);
   }
 }
 
-WaytatorDocument *
-waytator_document_new(void)
+SwashDocument *
+swash_document_new(void)
 {
-  WaytatorDocument *document = g_new0(WaytatorDocument, 1);
+  SwashDocument *document = g_new0(SwashDocument, 1);
 
-  document->strokes = g_ptr_array_new_with_free_func((GDestroyNotify) waytator_stroke_free);
+  document->strokes = g_ptr_array_new_with_free_func((GDestroyNotify) swash_stroke_free);
   document->undo_history = g_queue_new();
   document->redo_history = g_queue_new();
   return document;
 }
 
 void
-waytator_document_free(WaytatorDocument *document)
+swash_document_free(SwashDocument *document)
 {
   if (document == NULL)
     return;
 
-  waytator_document_clear_history(document);
+  swash_document_clear_history(document);
   g_clear_pointer(&document->image_pixels, g_bytes_unref);
   g_clear_pointer(&document->strokes, g_ptr_array_unref);
-  waytator_document_snapshot_free(document->saved_state);
+  swash_document_snapshot_free(document->saved_state);
   g_clear_pointer(&document->undo_history, g_queue_free);
   g_clear_pointer(&document->redo_history, g_queue_free);
   g_free(document);
 }
 
 GPtrArray *
-waytator_document_get_strokes(WaytatorDocument *document)
+swash_document_get_strokes(SwashDocument *document)
 {
   return document->strokes;
 }
 
 gboolean
-waytator_document_get_image(WaytatorDocument *document,
+swash_document_get_image(SwashDocument *document,
                             GBytes          **pixels,
                             int              *width,
                             int              *height,
@@ -252,7 +252,7 @@ waytator_document_get_image(WaytatorDocument *document,
 }
 
 void
-waytator_document_set_image(WaytatorDocument *document,
+swash_document_set_image(SwashDocument *document,
                             GBytes           *pixels,
                             int               width,
                             int               height,
@@ -267,103 +267,103 @@ waytator_document_set_image(WaytatorDocument *document,
 }
 
 guint
-waytator_document_get_image_generation(WaytatorDocument *document)
+swash_document_get_image_generation(SwashDocument *document)
 {
   return document->image_generation;
 }
 
 gboolean
-waytator_document_has_unsaved_changes(WaytatorDocument *document)
+swash_document_has_unsaved_changes(SwashDocument *document)
 {
-  WaytatorDocumentSnapshot *current_state = waytator_document_snapshot_from_document(document);
-  gboolean has_unsaved_changes = !waytator_document_snapshot_equal(current_state, document->saved_state);
+  SwashDocumentSnapshot *current_state = swash_document_snapshot_from_document(document);
+  gboolean has_unsaved_changes = !swash_document_snapshot_equal(current_state, document->saved_state);
 
-  waytator_document_snapshot_free(current_state);
+  swash_document_snapshot_free(current_state);
   return has_unsaved_changes;
 }
 
 void
-waytator_document_mark_saved(WaytatorDocument *document)
+swash_document_mark_saved(SwashDocument *document)
 {
-  waytator_document_snapshot_free(document->saved_state);
-  document->saved_state = waytator_document_snapshot_from_document(document);
+  swash_document_snapshot_free(document->saved_state);
+  document->saved_state = swash_document_snapshot_from_document(document);
 }
 
 gboolean
-waytator_document_can_undo(WaytatorDocument *document)
+swash_document_can_undo(SwashDocument *document)
 {
   return !g_queue_is_empty(document->undo_history);
 }
 
 gboolean
-waytator_document_can_redo(WaytatorDocument *document)
+swash_document_can_redo(SwashDocument *document)
 {
   return !g_queue_is_empty(document->redo_history);
 }
 
 void
-waytator_document_record_undo_step(WaytatorDocument *document)
+swash_document_record_undo_step(SwashDocument *document)
 {
-  g_queue_push_tail(document->undo_history, waytator_document_snapshot_from_document(document));
-  waytator_document_trim_history(document->undo_history);
-  g_queue_clear_full(document->redo_history, (GDestroyNotify) waytator_document_snapshot_free);
+  g_queue_push_tail(document->undo_history, swash_document_snapshot_from_document(document));
+  swash_document_trim_history(document->undo_history);
+  g_queue_clear_full(document->redo_history, (GDestroyNotify) swash_document_snapshot_free);
 }
 
 GPtrArray *
-waytator_document_discard_undo_step(WaytatorDocument *document)
+swash_document_discard_undo_step(SwashDocument *document)
 {
-  WaytatorDocumentSnapshot *snapshot;
+  SwashDocumentSnapshot *snapshot;
 
   if (g_queue_is_empty(document->undo_history))
     return document->strokes;
 
   snapshot = g_queue_pop_tail(document->undo_history);
-  waytator_document_apply_snapshot(document, snapshot);
+  swash_document_apply_snapshot(document, snapshot);
   return document->strokes;
 }
 
 GPtrArray *
-waytator_document_undo(WaytatorDocument *document)
+swash_document_undo(SwashDocument *document)
 {
-  WaytatorDocumentSnapshot *snapshot;
+  SwashDocumentSnapshot *snapshot;
 
   if (g_queue_is_empty(document->undo_history))
     return NULL;
 
-  g_queue_push_tail(document->redo_history, waytator_document_snapshot_from_document(document));
-  waytator_document_trim_history(document->redo_history);
+  g_queue_push_tail(document->redo_history, swash_document_snapshot_from_document(document));
+  swash_document_trim_history(document->redo_history);
   snapshot = g_queue_pop_tail(document->undo_history);
-  waytator_document_apply_snapshot(document, snapshot);
+  swash_document_apply_snapshot(document, snapshot);
   return document->strokes;
 }
 
 GPtrArray *
-waytator_document_redo(WaytatorDocument *document)
+swash_document_redo(SwashDocument *document)
 {
-  WaytatorDocumentSnapshot *snapshot;
+  SwashDocumentSnapshot *snapshot;
 
   if (g_queue_is_empty(document->redo_history))
     return NULL;
 
-  g_queue_push_tail(document->undo_history, waytator_document_snapshot_from_document(document));
-  waytator_document_trim_history(document->undo_history);
+  g_queue_push_tail(document->undo_history, swash_document_snapshot_from_document(document));
+  swash_document_trim_history(document->undo_history);
   snapshot = g_queue_pop_tail(document->redo_history);
-  waytator_document_apply_snapshot(document, snapshot);
+  swash_document_apply_snapshot(document, snapshot);
   return document->strokes;
 }
 
 void
-waytator_document_clear_history(WaytatorDocument *document)
+swash_document_clear_history(SwashDocument *document)
 {
   if (document->undo_history != NULL)
-    g_queue_clear_full(document->undo_history, (GDestroyNotify) waytator_document_snapshot_free);
+    g_queue_clear_full(document->undo_history, (GDestroyNotify) swash_document_snapshot_free);
 
   if (document->redo_history != NULL)
-    g_queue_clear_full(document->redo_history, (GDestroyNotify) waytator_document_snapshot_free);
+    g_queue_clear_full(document->redo_history, (GDestroyNotify) swash_document_snapshot_free);
 }
 
 void
-waytator_document_set_strokes(WaytatorDocument *document,
+swash_document_set_strokes(SwashDocument *document,
                               GPtrArray        *strokes)
 {
   g_clear_pointer(&document->strokes, g_ptr_array_unref);
@@ -371,7 +371,7 @@ waytator_document_set_strokes(WaytatorDocument *document,
 }
 
 void
-waytator_document_clear_annotations(WaytatorDocument *document)
+swash_document_clear_annotations(SwashDocument *document)
 {
   if (document->strokes != NULL)
     g_ptr_array_set_size(document->strokes, 0);

@@ -1,15 +1,15 @@
-#include "waytator-ocr.h"
+#include "ocr.h"
 
 #include <unistd.h>
 
-WaytatorOcrLine *
-waytator_ocr_line_new(int         left,
+SwashOcrLine *
+swash_ocr_line_new(int         left,
                       int         top,
                       int         width,
                       int         height,
                       const char *text)
 {
-  WaytatorOcrLine *line = g_new0(WaytatorOcrLine, 1);
+  SwashOcrLine *line = g_new0(SwashOcrLine, 1);
 
   line->left = left;
   line->top = top;
@@ -20,7 +20,7 @@ waytator_ocr_line_new(int         left,
 }
 
 void
-waytator_ocr_line_free(WaytatorOcrLine *line)
+swash_ocr_line_free(SwashOcrLine *line)
 {
   if (line == NULL)
     return;
@@ -31,16 +31,16 @@ waytator_ocr_line_free(WaytatorOcrLine *line)
   g_free(line);
 }
 
-WaytatorOcrRequest *
-waytator_ocr_request_new(GdkTexture *texture,
+SwashOcrRequest *
+swash_ocr_request_new(GdkTexture *texture,
                          guint       generation)
 {
-  WaytatorOcrRequest *request;
+  SwashOcrRequest *request;
 
   if (texture == NULL)
     return NULL;
 
-  request = g_new0(WaytatorOcrRequest, 1);
+  request = g_new0(SwashOcrRequest, 1);
   request->generation = generation;
   request->width = gdk_texture_get_width(texture);
   request->height = gdk_texture_get_height(texture);
@@ -51,7 +51,7 @@ waytator_ocr_request_new(GdkTexture *texture,
 }
 
 void
-waytator_ocr_request_free(WaytatorOcrRequest *request)
+swash_ocr_request_free(SwashOcrRequest *request)
 {
   if (request == NULL)
     return;
@@ -61,7 +61,7 @@ waytator_ocr_request_free(WaytatorOcrRequest *request)
 }
 
 void
-waytator_ocr_result_free(WaytatorOcrResult *result)
+swash_ocr_result_free(SwashOcrResult *result)
 {
   if (result == NULL)
     return;
@@ -71,7 +71,7 @@ waytator_ocr_result_free(WaytatorOcrResult *result)
 }
 
 static gboolean
-waytator_ocr_parse_tsv(const char  *tsv,
+swash_ocr_parse_tsv(const char  *tsv,
                        GPtrArray  **lines_out,
                        GError     **error)
 {
@@ -90,7 +90,7 @@ waytator_ocr_parse_tsv(const char  *tsv,
   guint i;
 
   rows = g_strsplit(tsv, "\n", -1);
-  lines = g_ptr_array_new_with_free_func((GDestroyNotify) waytator_ocr_line_free);
+  lines = g_ptr_array_new_with_free_func((GDestroyNotify) swash_ocr_line_free);
   current_text = g_string_new(NULL);
 
   for (i = 1; rows[i] != NULL; i++) {
@@ -140,7 +140,7 @@ waytator_ocr_parse_tsv(const char  *tsv,
         || line_num != current_line) {
       if (have_current && current_text->len > 0) {
         g_ptr_array_add(lines,
-                        waytator_ocr_line_new(current_left,
+                        swash_ocr_line_new(current_left,
                                               current_top,
                                               MAX(1, current_right - current_left),
                                               MAX(1, current_bottom - current_top),
@@ -171,7 +171,7 @@ waytator_ocr_parse_tsv(const char  *tsv,
 
   if (have_current && current_text->len > 0) {
     g_ptr_array_add(lines,
-                    waytator_ocr_line_new(current_left,
+                    swash_ocr_line_new(current_left,
                                           current_top,
                                           MAX(1, current_right - current_left),
                                           MAX(1, current_bottom - current_top),
@@ -194,12 +194,12 @@ waytator_ocr_parse_tsv(const char  *tsv,
 }
 
 void
-waytator_ocr_run_task(GTask        *task,
+swash_ocr_run_task(GTask        *task,
                       gpointer      source_object,
                       gpointer      task_data,
                       GCancellable *cancellable)
 {
-  WaytatorOcrRequest *request = task_data;
+  SwashOcrRequest *request = task_data;
   cairo_surface_t *surface;
   g_autofree char *png_path = NULL;
   g_autofree char *stdout_data = NULL;
@@ -216,13 +216,13 @@ waytator_ocr_run_task(GTask        *task,
     (gchar *) "tsv",
     NULL,
   };
-  WaytatorOcrResult *result;
+  SwashOcrResult *result;
   GPtrArray *lines = NULL;
 
   (void) source_object;
   (void) cancellable;
 
-  fd = g_file_open_tmp("waytator-ocr-XXXXXX.png", &png_path, &error);
+  fd = g_file_open_tmp("ocr-XXXXXX.png", &png_path, &error);
   if (fd == -1) {
     g_task_return_error(task, g_steal_pointer(&error));
     return;
@@ -279,13 +279,13 @@ waytator_ocr_run_task(GTask        *task,
     return;
   }
 
-  if (!waytator_ocr_parse_tsv(stdout_data != NULL ? stdout_data : "", &lines, &error)) {
+  if (!swash_ocr_parse_tsv(stdout_data != NULL ? stdout_data : "", &lines, &error)) {
     g_task_return_error(task, g_steal_pointer(&error));
     return;
   }
 
-  result = g_new0(WaytatorOcrResult, 1);
+  result = g_new0(SwashOcrResult, 1);
   result->generation = request->generation;
   result->lines = lines;
-  g_task_return_pointer(task, result, (GDestroyNotify) waytator_ocr_result_free);
+  g_task_return_pointer(task, result, (GDestroyNotify) swash_ocr_result_free);
 }

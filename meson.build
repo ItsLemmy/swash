@@ -1,5 +1,5 @@
 project(
-  'waytator',
+  'swash',
   'c',
   version: '1.3.1',
   license: 'GPL-3.0-or-later',

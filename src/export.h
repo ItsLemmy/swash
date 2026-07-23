@@ -1,22 +1,22 @@
 #pragma once
 
-#include "waytator-types.h"
+#include "types.h"
 
-WaytatorExportRequest *waytator_export_request_new(GdkTexture            *texture,
+SwashExportRequest *swash_export_request_new(GdkTexture            *texture,
                                                    GPtrArray             *strokes,
-                                                   WaytatorExportKind     kind,
+                                                   SwashExportKind     kind,
                                                    GFile                 *file,
                                                    const char            *copy_format,
-                                                   WaytatorStrokeCopyFunc copy_stroke,
+                                                   SwashStrokeCopyFunc copy_stroke,
                                                    GDestroyNotify         stroke_free,
                                                    gboolean               allow_marker_overlap,
-                                                   WaytatorStrokeRenderFunc render_stroke,
+                                                   SwashStrokeRenderFunc render_stroke,
                                                    guint                  image_generation,
                                                    GError               **error);
-void waytator_export_request_free(WaytatorExportRequest *request);
+void swash_export_request_free(SwashExportRequest *request);
 
-void waytator_copy_result_free(WaytatorCopyResult *result);
-void waytator_export_run_task(GTask        *task,
+void swash_copy_result_free(SwashCopyResult *result);
+void swash_export_run_task(GTask        *task,
                               gpointer      source_object,
                               gpointer      task_data,
                               GCancellable *cancellable);
