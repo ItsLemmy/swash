@@ -18,6 +18,221 @@ swash_marker_add_rect(cairo_t *cr,
                   height);
 }
 
+static uint32_t
+swash_blur_average_pixel(uint32_t sum_b,
+                         uint32_t sum_g,
+                         uint32_t sum_r,
+                         uint32_t sum_a,
+                         uint32_t count)
+{
+  return ((sum_a / count) << 24)
+       | ((sum_r / count) << 16)
+       | ((sum_g / count) << 8)
+       | (sum_b / count);
+}
+
+static void
+swash_blur_add_pixel(uint32_t  pixel,
+                     uint32_t *sum_b,
+                     uint32_t *sum_g,
+                     uint32_t *sum_r,
+                     uint32_t *sum_a)
+{
+  *sum_b += pixel & 0xff;
+  *sum_g += (pixel >> 8) & 0xff;
+  *sum_r += (pixel >> 16) & 0xff;
+  *sum_a += (pixel >> 24) & 0xff;
+}
+
+static void
+swash_blur_subtract_pixel(uint32_t  pixel,
+                          uint32_t *sum_b,
+                          uint32_t *sum_g,
+                          uint32_t *sum_r,
+                          uint32_t *sum_a)
+{
+  *sum_b -= pixel & 0xff;
+  *sum_g -= (pixel >> 8) & 0xff;
+  *sum_r -= (pixel >> 16) & 0xff;
+  *sum_a -= (pixel >> 24) & 0xff;
+}
+
+static void
+swash_box_blur_horizontal(const uint32_t *src,
+                          uint32_t       *dst,
+                          int             width,
+                          int             height,
+                          int             radius)
+{
+  const int sample_count = radius * 2 + 1;
+  int y;
+
+  for (y = 0; y < height; y++) {
+    const uint32_t *src_row = src + (gsize) y * width;
+    uint32_t *dst_row = dst + (gsize) y * width;
+    uint32_t sum_b = 0;
+    uint32_t sum_g = 0;
+    uint32_t sum_r = 0;
+    uint32_t sum_a = 0;
+    int x;
+
+    for (x = -radius; x <= radius; x++) {
+      const int src_x = CLAMP(x, 0, width - 1);
+
+      swash_blur_add_pixel(src_row[src_x], &sum_b, &sum_g, &sum_r, &sum_a);
+    }
+
+    for (x = 0; x < width; x++) {
+      dst_row[x] = swash_blur_average_pixel(sum_b,
+                                             sum_g,
+                                             sum_r,
+                                             sum_a,
+                                             sample_count);
+
+      if (x + 1 < width) {
+        const int remove_x = CLAMP(x - radius, 0, width - 1);
+        const int add_x = CLAMP(x + radius + 1, 0, width - 1);
+
+        swash_blur_subtract_pixel(src_row[remove_x], &sum_b, &sum_g, &sum_r, &sum_a);
+        swash_blur_add_pixel(src_row[add_x], &sum_b, &sum_g, &sum_r, &sum_a);
+      }
+    }
+  }
+}
+
+static void
+swash_box_blur_vertical(const uint32_t *src,
+                        uint32_t       *dst,
+                        int             width,
+                        int             height,
+                        int             radius)
+{
+  const int sample_count = radius * 2 + 1;
+
+  for (int x = 0; x < width; x++) {
+    uint32_t sum_b = 0;
+    uint32_t sum_g = 0;
+    uint32_t sum_r = 0;
+    uint32_t sum_a = 0;
+    int y;
+
+    for (y = -radius; y <= radius; y++) {
+      const int src_y = CLAMP(y, 0, height - 1);
+
+      swash_blur_add_pixel(src[(gsize) src_y * width + x], &sum_b, &sum_g, &sum_r, &sum_a);
+    }
+
+    for (y = 0; y < height; y++) {
+      dst[(gsize) y * width + x] = swash_blur_average_pixel(sum_b,
+                                                            sum_g,
+                                                            sum_r,
+                                                            sum_a,
+                                                            sample_count);
+
+      if (y + 1 < height) {
+        const int remove_y = CLAMP(y - radius, 0, height - 1);
+        const int add_y = CLAMP(y + radius + 1, 0, height - 1);
+
+        swash_blur_subtract_pixel(src[(gsize) remove_y * width + x],
+                                  &sum_b,
+                                  &sum_g,
+                                  &sum_r,
+                                  &sum_a);
+        swash_blur_add_pixel(src[(gsize) add_y * width + x],
+                             &sum_b,
+                             &sum_g,
+                             &sum_r,
+                             &sum_a);
+      }
+    }
+  }
+}
+
+static void
+swash_gaussian_box_radii(double sigma,
+                         int    radii[3])
+{
+  const int pass_count = 3;
+  const double ideal_width = sqrt(12.0 * sigma * sigma / pass_count + 1.0);
+  int lower_width = (int) floor(ideal_width);
+  int upper_width;
+  int lower_passes;
+
+  if (lower_width % 2 == 0)
+    lower_width--;
+  lower_width = MAX(1, lower_width);
+  upper_width = lower_width + 2;
+  lower_passes = (int) round((12.0 * sigma * sigma
+                              - pass_count * lower_width * lower_width
+                              - 4.0 * pass_count * lower_width
+                              - 3.0 * pass_count)
+                             / (-4.0 * lower_width - 4.0));
+  lower_passes = CLAMP(lower_passes, 0, pass_count);
+
+  for (int i = 0; i < pass_count; i++) {
+    const int width = i < lower_passes ? lower_width : upper_width;
+
+    radii[i] = (width - 1) / 2;
+  }
+}
+
+static void
+swash_blur_region(const unsigned char *src_data,
+                  int                  src_w,
+                  int                  src_h,
+                  int                  src_stride,
+                  unsigned char       *dst_data,
+                  int                  dst_stride,
+                  int                  region_x,
+                  int                  region_y,
+                  int                  region_w,
+                  int                  region_h,
+                  double               strength)
+{
+  int radii[3];
+  int padding;
+  int work_w;
+  int work_h;
+  gsize pixel_count;
+  uint32_t *pixels;
+  uint32_t *scratch;
+
+  swash_gaussian_box_radii(MAX(0.8, strength / 3.0), radii);
+  padding = radii[0] + radii[1] + radii[2];
+  work_w = region_w + padding * 2;
+  work_h = region_h + padding * 2;
+  pixel_count = (gsize) work_w * work_h;
+  pixels = g_new(uint32_t, pixel_count);
+  scratch = g_new(uint32_t, pixel_count);
+
+  for (int y = 0; y < work_h; y++) {
+    const int src_y = CLAMP(region_y - padding + y, 0, src_h - 1);
+    const uint32_t *src_row = (const uint32_t *) (src_data + src_y * src_stride);
+    uint32_t *work_row = pixels + (gsize) y * work_w;
+
+    for (int x = 0; x < work_w; x++) {
+      const int src_x = CLAMP(region_x - padding + x, 0, src_w - 1);
+
+      work_row[x] = src_row[src_x];
+    }
+  }
+
+  for (int i = 0; i < 3; i++) {
+    swash_box_blur_horizontal(pixels, scratch, work_w, work_h, radii[i]);
+    swash_box_blur_vertical(scratch, pixels, work_w, work_h, radii[i]);
+  }
+
+  for (int y = 0; y < region_h; y++) {
+    const uint32_t *src_row = pixels + (gsize) (y + padding) * work_w + padding;
+    uint32_t *dst_row = (uint32_t *) (dst_data + y * dst_stride);
+
+    memcpy(dst_row, src_row, (gsize) region_w * sizeof(uint32_t));
+  }
+
+  g_free(scratch);
+  g_free(pixels);
+}
+
 double
 swash_tool_width(SwashTool tool)
 {
@@ -345,10 +560,17 @@ swash_stroke_render(cairo_t         *cr,
         return;
 
       block_size = MAX(2, (int) stroke->width);
-      b_left = floor(left / block_size) * block_size;
-      b_top = floor(top / block_size) * block_size;
-      b_right = ceil((left + rect_width) / block_size) * block_size;
-      b_bottom = ceil((top + rect_height) / block_size) * block_size;
+      if (stroke->blur_type == 1) {
+        b_left = floor(left / block_size) * block_size;
+        b_top = floor(top / block_size) * block_size;
+        b_right = ceil((left + rect_width) / block_size) * block_size;
+        b_bottom = ceil((top + rect_height) / block_size) * block_size;
+      } else {
+        b_left = floor(left);
+        b_top = floor(top);
+        b_right = ceil(left + rect_width);
+        b_bottom = ceil(top + rect_height);
+      }
       tw = b_right - b_left;
       th = b_bottom - b_top;
       if (tw <= 0 || th <= 0)
@@ -408,49 +630,17 @@ swash_stroke_render(cairo_t         *cr,
             }
           }
         } else {
-          int kernel_size = MAX(2, (int) stroke->width);
-          int step = MAX(1, kernel_size / 4);
-          int y;
-
-          for (y = 0; y < th; y += step) {
-            int x;
-
-            for (x = 0; x < tw; x += step) {
-              int sum_r = 0;
-              int sum_g = 0;
-              int sum_b = 0;
-              int sum_a = 0;
-              int count = 0;
-              int dy;
-              uint32_t out_pixel = 0;
-
-              for (dy = -kernel_size / 2; dy <= kernel_size / 2; dy += step) {
-                int dx;
-
-                for (dx = -kernel_size / 2; dx <= kernel_size / 2; dx += step) {
-                  int cx = CLAMP(b_left + x + dx, 0, src_w - 1);
-                  int cy = CLAMP(b_top + y + dy, 0, src_h - 1);
-                  uint32_t pixel = *(uint32_t *) (src_data + cy * src_stride + cx * 4);
-
-                  sum_b += (pixel & 0xFF);
-                  sum_g += ((pixel >> 8) & 0xFF);
-                  sum_r += ((pixel >> 16) & 0xFF);
-                  sum_a += ((pixel >> 24) & 0xFF);
-                  count++;
-                }
-              }
-
-              if (count > 0)
-                out_pixel = ((sum_a / count) << 24) | ((sum_r / count) << 16) | ((sum_g / count) << 8) | (sum_b / count);
-
-              for (int by = 0; by < step && y + by < th; by++) {
-                uint32_t *dst_row = (uint32_t *) (dst_data + (y + by) * dst_stride);
-
-                for (int bx = 0; bx < step && x + bx < tw; bx++)
-                  dst_row[x + bx] = out_pixel;
-              }
-            }
-          }
+          swash_blur_region(src_data,
+                            src_w,
+                            src_h,
+                            src_stride,
+                            dst_data,
+                            dst_stride,
+                            b_left,
+                            b_top,
+                            tw,
+                            th,
+                            stroke->width);
         }
 
         cairo_surface_mark_dirty(stroke->blur_cache);
