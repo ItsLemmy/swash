@@ -29,10 +29,11 @@ stdenv.mkDerivation (finalAttrs: {
     libadwaita
   ];
 
-  runtimeInputs = [
-    tesseract
-    wl-clipboard
-  ];
+  preFixup = ''
+    gappsWrapperArgs+=(
+      --prefix PATH : "${lib.makeBinPath [ tesseract wl-clipboard ]}"
+    )
+  '';
 
   meta = with lib; {
     description = "Screenshot annotator and lightweight image editor";
